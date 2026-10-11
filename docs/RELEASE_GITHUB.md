@@ -6,20 +6,31 @@
 
 ### Ваш сценарий (APK делаете вы в Studio)
 
-1. **Пункт 1** — версия уже **1.0.4 (5)** в проекте, можно не трогать.  
-2. **Пункт 2** — вы: **Generate Signed APK → release**.  
-3. Напишите ассистенту: «APK готов» — он выложит **GitHub Release** с тегом **`v5`** и подскажет проверку обновления.
+1. Проверьте `versionCode` / `versionName` в `build.gradle.kts` → **Sync** → **Generate Signed APK**.  
+2. Напишите «APK готов» — публикация на GitHub **без повторной сборки** (`gh release create`, ~1 мин).
+
+### Быстрая публикация (не гонять Gradle снова)
+
+APK уже в `app\release\app-release.apk`. Публикация **не должна** вызывать `gradlew assembleRelease` — это долго и жрёт RAM.
+
+```powershell
+cd D:\Projects\CalculatorAPK
+.\gradlew.bat --stop
+gh release create v6 --repo Kharlamovcursor/CalculatorAPK --title "1.0.5" --notes "UI основного расчёта, анимации кнопок" "app\release\app-release.apk#HDLabs-Electrosmeta-1.0.5.apk"
+```
+
+Тег **`vN`** = **`versionCode`** в собранном APK.
 
 ---
 
 ## 1. Номер версии (уже настроено в проекте)
 
-**Вам ничего менять не нужно**, если собираете релиз **1.0.4** — в проекте уже стоит:
+Сейчас в проекте (перед сборкой проверьте в файле):
 
-| Строка в `app/build.gradle.kts` | Значение | Зачем |
-|---------------------------------|----------|--------|
-| `versionCode = 5` | **5** | Скрытый номер для обновлений; на GitHub тег будет **`v5`** |
-| `versionName = "1.0.4"` | **1.0.4** | То, что видно в приложении: «Версия 1.0.4» |
+| Строка в `app/build.gradle.kts` | Пример | Зачем |
+|---------------------------------|--------|--------|
+| `versionCode` | **6** | Тег на GitHub: **`v6`** |
+| `versionName` | **1.0.5** | «Версия …» в приложении |
 
 **Где смотреть в Android Studio:** слева **Project** → папка **app** → файл **`build.gradle.kts`** → прокрутить до `defaultConfig` (строки ~19–20).
 
@@ -51,13 +62,20 @@
 5. **Next** → отметьте **release** → **Create** / **Finish**.
 6. Внизу появится уведомление **locate** — откройте папку.
 
-### Где лежит файл
+### Где лежит файл (важно: два разных пути)
+
+| Как собирали | Папка | Когда смотреть |
+|--------------|--------|----------------|
+| **Generate Signed APK** в Android Studio | `app\release\app-release.apk` | **Ваш случай** — свежий файл здесь |
+| `gradlew assembleRelease` в терминале | `app\build\outputs\apk\release\app-release.apk` | Может быть **старым**, если Studio не пересобирала Gradle-папку |
+
+Полный путь после Studio:
 
 ```
-D:\Projects\CalculatorAPK\app\build\outputs\apk\release\app-release.apk
+D:\Projects\CalculatorAPK\app\release\app-release.apk
 ```
 
-Проверьте **дату изменения** файла — она должна быть сегодняшней.
+Смотрите **дату изменения** в проводнике (ПКМ → свойства). Если в `build\outputs\...` дата старая — это **не** последняя Signed-сборка.
 
 Если файл не обновился: **Build → Clean Project**, затем снова **Generate Signed APK**.
 
@@ -118,7 +136,8 @@ git push origin main
 
 ### Если «релиз не найден» (404)
 
-На репозитории ещё нет **опубликованного** Release с файлом `.apk`.
+- На GitHub ещё нет Release с `.apk`, **или**
+- На телефоне **старая сборка (1.0.3 и раньше)** — в ней репозиторий **не был вшит**, поля GitHub в настройках убрали, поэтому приложение не знает адрес. **Один раз** установите APK вручную с [Releases](https://github.com/Kharlamovcursor/CalculatorAPK/releases). С **1.0.4** репозиторий уже внутри APK (`Kharlamovcursor/CalculatorAPK`).
 
 ---
 

@@ -37,7 +37,7 @@ keytool -genkeypair -v -keystore release.keystore -alias hdlabs -keyalg RSA -key
 2. **Build → Generate Signed App Bundle or APK** → **APK**.
 3. Keystore: `release.keystore`, alias `hdlabs` (пароли локально).
 4. Вариант сборки: **release** → Finish.
-5. Файл: `app\build\outputs\apk\release\app-release.apk` (смотрите дату файла).
+5. Файл после Studio: **`app\release\app-release.apk`** (не путать с `app\build\outputs\apk\release\` — там может лежать старая сборка из Gradle).
 
 Если APK «старый»: **Build → Clean Project**, затем снова Signed APK.
 
@@ -68,7 +68,7 @@ keytool -genkeypair -v -keystore release.keystore -alias hdlabs -keyalg RSA -key
 
 ## Ускорение сборки
 
-При **16 ГБ** оперативной памяти в `gradle.properties` для Gradle daemon задано около **5 ГБ** (`-Xmx5120m`); перед тяжёлой сборкой имеет смысл закрыть лишние программы, чтобы оставалось свободно **6–7 ГБ**. Параметр **`org.gradle.workers.max=4`** ограничивает число параллельных worker’ов и снижает пики RAM при `org.gradle.parallel=true`.
+При **16 ГБ** RAM: Gradle **~3 ГБ**, Kotlin daemon **~1 ГБ**, **`workers.max=2`**. Не запускайте **gradlew** в терминале, пока Studio собирает проект. Освободить память: `gradlew --stop`.
 
 - Для ежедневной работы удобнее **Android Studio** (Build / Run) — Gradle daemon остаётся в памяти и повторные сборки быстрее.
 - В командной строке не добавляйте **`--no-daemon`** без необходимости: каждый запуск с ним холодный и медленнее.

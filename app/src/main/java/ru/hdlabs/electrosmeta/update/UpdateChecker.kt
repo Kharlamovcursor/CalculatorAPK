@@ -55,7 +55,8 @@ class GitHubUpdateSource(
         if (code !in 200..299) {
             throw IllegalStateException(
                 when (code) {
-                    404 -> "Релиз не найден. Создайте Release на GitHub с файлом .apk"
+                    404 -> "Релиз не найден ($owner/$repo). " +
+                        "Если у вас версия до 1.0.4 — установите новый APK вручную с GitHub Releases."
                     403 -> "Доступ запрещён (лимит API или приватный репозиторий)"
                     else -> "GitHub ответил: HTTP $code"
                 },

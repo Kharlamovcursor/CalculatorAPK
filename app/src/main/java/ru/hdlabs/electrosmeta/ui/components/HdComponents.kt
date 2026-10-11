@@ -1,7 +1,10 @@
 package ru.hdlabs.electrosmeta.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -20,6 +23,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -109,10 +115,14 @@ fun HdPrimaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed && enabled) 0.96f else 1f, label = "btnScale")
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.fillMaxWidth(),
+        interactionSource = interactionSource,
+        modifier = modifier.fillMaxWidth().scale(scale),
         shape = RoundedCornerShape(14.dp),
         contentPadding = PaddingValues(vertical = 14.dp),
         colors = ButtonDefaults.buttonColors(
@@ -132,11 +142,17 @@ fun HdPrimaryButton(
 fun HdSecondaryButton(
     text: String,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed && enabled) 0.96f else 1f, label = "btnScaleSec")
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
+        interactionSource = interactionSource,
+        modifier = modifier.fillMaxWidth().scale(scale),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(containerColor = HdPanel),
         border = BorderStroke(1.dp, HdBlue.copy(alpha = 0.4f)),
