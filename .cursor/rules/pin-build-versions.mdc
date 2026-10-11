@@ -1,0 +1,15 @@
+---
+description: Не менять версии Gradle и Android Gradle Plugin
+alwaysApply: true
+---
+
+# Зафиксированные версии сборки
+
+Не повышай и не понижай версии инструментов сборки. Проект остаётся на них, чтобы синхронизация не скачивала новые дистрибутивы.
+
+- Android Gradle Plugin: `9.4.1` в `gradle/libs.versions.toml`
+- Gradle: `9.6.0` в `gradle/wrapper/gradle-wrapper.properties`
+- Kotlin: `2.2.10`
+- KSP: `2.3.6`
+
+Не запускай Upgrade Assistant и не меняй эти строки, чтобы «починить» синхронизацию. Окно «Up-to-date for Android Gradle Plugin version 9.4.1» закрывается без «Run selected steps».

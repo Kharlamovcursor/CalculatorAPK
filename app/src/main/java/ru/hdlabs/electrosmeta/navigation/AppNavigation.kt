@@ -58,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -66,6 +67,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -116,6 +118,7 @@ import ru.hdlabs.electrosmeta.ui.components.HdTextField
 import androidx.compose.foundation.background
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
 import ru.hdlabs.electrosmeta.ui.theme.HdPanel
+import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
 import ru.hdlabs.electrosmeta.update.InstallHelper
@@ -798,11 +801,20 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var highlightedMainCategoryKey by remember { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    var lastLineCount by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(highlightedMainCategoryKey) {
         if (highlightedMainCategoryKey != null) {
-            delay(2500)
+            delay(4000)
             highlightedMainCategoryKey = null
         }
+    }
+
+    suspend fun showSnack(message: String) {
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Short,
+        )
     }
     var discountPct by remember(estimate?.id) { mutableStateOf(estimate?.discountPercent?.toString() ?: "0") }
     var discountAmt by remember(estimate?.id) { mutableStateOf(((estimate?.discountAmountKopecks ?: 0) / 100).toString()) }
@@ -867,10 +879,14 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             val mainLineGroups = remember(state.lines, state.categories, state.servicesByCategory) {
                 buildMainLineGroups(state)
             }
-            LaunchedEffect(mainLineGroups.map { it.categoryKey }) {
-                if (mainLineGroups.isNotEmpty()) {
+            LaunchedEffect(state.lines.size, mainLineGroups.map { it.categoryKey }) {
+                if (state.lines.size > lastLineCount) {
                     expandedMainCategoryKeys = expandedMainCategoryKeys + mainLineGroups.map { it.categoryKey }
+                    highlightedMainCategoryKey?.let { key ->
+                        expandedMainCategoryKeys = expandedMainCategoryKeys + key
+                    }
                 }
+                lastLineCount = state.lines.size
             }
             HdCard(Modifier.padding(bottom = 12.dp)) {
                 Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
@@ -888,10 +904,10 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                         },
                         onUpdateLine = { line ->
                             vm.updateLine(line)
-                            scope.launch { snackbarHostState.showSnackbar("Позиция обновлена") }
+                            scope.launch { showSnack("✓ Позиция обновлена") }
                         },
                         onUpdateFailed = {
-                            scope.launch { snackbarHostState.showSnackbar("Не удалось обновить: проверьте поля") }
+                            scope.launch { showSnack("Не удалось обновить — проверьте количество и цену") }
                         },
                         onDeleteLine = { vm.removeLine(it) },
                     )
@@ -941,15 +957,15 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                     MainServicePickerPanel(
                         state = state,
                         onAddServices = { services, pickerCategoryKey ->
-                            vm.addServices(services)
                             val keys = services.map { it.categoryId }.toSet()
-                            expandedMainCategoryKeys = expandedMainCategoryKeys + keys + pickerCategoryKey
                             val highlight = keys.firstOrNull() ?: pickerCategoryKey
+                            expandedMainCategoryKeys = expandedMainCategoryKeys + keys + highlight
                             highlightedMainCategoryKey = highlight
                             showServicePicker = false
+                            vm.addServices(services)
                             scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    "Добавлено в «${categoryTitle(state, highlight)}»: ${services.size} поз.",
+                                showSnack(
+                                    "✓ Добавлено в «${categoryTitle(state, highlight)}»: ${services.size} поз.",
                                 )
                             }
                         },
@@ -989,10 +1005,10 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                     allowUnitChoice = true,
                     onUpdate = { updated ->
                         vm.updateLine(updated)
-                        scope.launch { snackbarHostState.showSnackbar("Позиция обновлена") }
+                        scope.launch { showSnack("✓ Позиция обновлена") }
                     },
                     onUpdateFailed = {
-                        scope.launch { snackbarHostState.showSnackbar("Не удалось обновить: проверьте поля") }
+                        scope.launch { showSnack("Не удалось обновить — проверьте количество и цену") }
                     },
                     onDelete = { vm.removeLine(line.id) },
                 )
@@ -1031,7 +1047,14 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .padding(16.dp),
-        snackbar = { data -> Snackbar(snackbarData = data, containerColor = HdPanel) },
+        snackbar = { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = HdPanelElevated,
+                contentColor = HdTextPrimary,
+                actionColor = HdOrange,
+            )
+        },
     )
     }
 
@@ -1163,22 +1186,34 @@ private fun MainCategoryLinesSection(
 ) {
     val shape = RoundedCornerShape(12.dp)
     val headerBg = when {
-        highlighted -> HdOrange.copy(alpha = 0.35f)
-        expanded -> HdOrange.copy(alpha = 0.18f)
+        highlighted -> HdOrange.copy(alpha = 0.45f)
+        expanded -> HdOrange.copy(alpha = 0.22f)
         else -> HdPanel.copy(alpha = 0.6f)
     }
+    val headerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val headerPressed by headerInteraction.collectIsPressedAsState()
+    val headerScale by animateFloatAsState(if (headerPressed) 0.98f else 1f, label = "catHeaderScale")
     Column(Modifier.padding(bottom = 10.dp)) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .scale(headerScale)
                 .clip(shape)
                 .background(headerBg)
                 .border(
-                    width = if (highlighted) 2.dp else 1.dp,
-                    color = if (highlighted || expanded) HdOrange else HdTextSecondary.copy(alpha = 0.35f),
+                    width = if (highlighted) 2.5.dp else if (expanded) 1.5.dp else 1.dp,
+                    color = when {
+                        highlighted -> HdOrange
+                        expanded -> HdOrange.copy(alpha = 0.85f)
+                        else -> HdTextSecondary.copy(alpha = 0.35f)
+                    },
                     shape = shape,
                 )
-                .clickable(onClick = onToggleExpand)
+                .clickable(
+                    interactionSource = headerInteraction,
+                    indication = ripple(color = HdOrange),
+                    onClick = onToggleExpand,
+                )
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -1379,10 +1414,14 @@ private fun ServiceCategoryChip(
 ) {
     val shape = RoundedCornerShape(12.dp)
     val bg = if (selected) HdOrange.copy(alpha = 0.28f) else HdPanel.copy(alpha = 0.5f)
+    val chipInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val chipPressed by chipInteraction.collectIsPressedAsState()
+    val chipScale by animateFloatAsState(if (chipPressed) 0.97f else 1f, label = "chipScale")
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
+            .scale(chipScale)
             .clip(shape)
             .background(bg)
             .border(
@@ -1390,7 +1429,11 @@ private fun ServiceCategoryChip(
                 color = if (selected) HdOrange else HdTextSecondary.copy(alpha = 0.35f),
                 shape = shape,
             )
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = chipInteraction,
+                indication = ripple(color = HdOrange),
+                onClick = onClick,
+            )
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

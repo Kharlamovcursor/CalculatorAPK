@@ -1,0 +1,24 @@
+---
+description: После правок приложения — инструкция сборки APK; публикация в Git только после сообщения пользователя
+alwaysApply: true
+---
+
+# Сборка APK и публикация
+
+После любых правок приложения (код, ресурсы, версия) **не собирай APK и не запускай Gradle**. В конце ответа напиши дословно:
+
+Соберите подписанный APK в Android Studio:
+
+1. File → Sync Project with Gradle Files
+2. Build → Generate Signed App Bundle or APK → APK → release
+3. Готовый файл: `app\release\app-release.apk`
+
+Дальше жди сообщение пользователя, что APK собран (например «APK готов»).
+
+Когда пользователь написал, что собрал:
+
+1. Проверь, что `app\release\app-release.apk` новый и `versionCode` в нём совпадает с `app/build.gradle.kts`.
+2. Закоммить изменения приложения и запушь в Git.
+3. Опубликуй GitHub Release: тег `v{versionCode}`, вложение `app\release\app-release.apk`.
+
+Не публикуй, пока пользователь сам не подтвердил сборку.
