@@ -1,0 +1,1 @@
+-keep class ru.hdlabs.electrosmeta.data.local.** { *; }

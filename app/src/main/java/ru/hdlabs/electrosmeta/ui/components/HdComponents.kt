@@ -1,0 +1,126 @@
+package ru.hdlabs.electrosmeta.ui.components
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import ru.hdlabs.electrosmeta.ui.theme.HdBlack
+import ru.hdlabs.electrosmeta.ui.theme.HdBlue
+import ru.hdlabs.electrosmeta.ui.theme.HdOrange
+import ru.hdlabs.electrosmeta.ui.theme.HdPanel
+import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
+import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
+import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
+
+@Composable
+fun HdScreenRoot(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.foundation.layout.Box(modifier = modifier) {
+        content()
+    }
+}
+
+@Composable
+fun HdCard(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = HdPanelElevated.copy(alpha = 0.92f)),
+        border = BorderStroke(1.dp, HdBlue.copy(alpha = 0.25f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
+        androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun HdPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(vertical = 14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            disabledContainerColor = HdPanel,
+        ),
+        border = BorderStroke(
+            1.5.dp,
+            Brush.horizontalGradient(listOf(HdBlue, HdOrange)),
+        ),
+    ) {
+        Text(text, color = HdTextPrimary)
+    }
+}
+
+@Composable
+fun HdSecondaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = HdPanel),
+        border = BorderStroke(1.dp, HdBlue.copy(alpha = 0.4f)),
+    ) {
+        Text(text, color = HdTextPrimary)
+    }
+}
+
+@Composable
+fun HdTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier.fillMaxWidth(),
+        singleLine = singleLine,
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = HdBlue,
+            unfocusedBorderColor = HdTextSecondary.copy(alpha = 0.4f),
+            focusedTextColor = HdTextPrimary,
+            unfocusedTextColor = HdTextPrimary,
+            focusedLabelColor = HdBlue,
+            unfocusedLabelColor = HdTextSecondary,
+            cursorColor = HdOrange,
+            focusedContainerColor = HdBlack.copy(alpha = 0.5f),
+            unfocusedContainerColor = HdBlack.copy(alpha = 0.35f),
+        ),
+    )
+}
