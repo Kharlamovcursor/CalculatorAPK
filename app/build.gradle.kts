@@ -16,24 +16,31 @@ android {
         applicationId = "ru.hdlabs.electrosmeta"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "GITHUB_RELEASES_OWNER", "\"\"")
-        buildConfigField("String", "GITHUB_RELEASES_REPO", "\"\"")
+        buildConfigField("String", "GITHUB_RELEASES_OWNER", "\"Kharlamovcursor\"")
+        buildConfigField("String", "GITHUB_RELEASES_REPO", "\"CalculatorAPK\"")
     }
 
     signingConfigs {
         create("release") {
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
-                val props = Properties().apply { keystorePropsFile.inputStream().use { load(it) } }
-                storeFile = rootProject.file(props.getProperty("storeFile"))
-                storePassword = props.getProperty("storePassword")
-                keyAlias = props.getProperty("keyAlias")
-                keyPassword = props.getProperty("keyPassword")
+                val propsText = keystorePropsFile.readText(Charsets.UTF_8).removePrefix("\uFEFF")
+                val props = Properties().apply { load(propsText.reader()) }
+                fun prop(name: String): String =
+                    props.getProperty(name)?.trim()
+                        ?: props.entries.firstOrNull { (it.key as String).removePrefix("\uFEFF").trim() == name }
+                            ?.value?.toString()?.trim()
+                        ?: error("Missing $name in keystore.properties")
+
+                storeFile = rootProject.file(prop("storeFile"))
+                storePassword = prop("storePassword")
+                keyAlias = prop("keyAlias")
+                keyPassword = prop("keyPassword")
             }
         }
     }

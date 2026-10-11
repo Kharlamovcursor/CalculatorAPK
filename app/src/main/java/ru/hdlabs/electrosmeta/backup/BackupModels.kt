@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import ru.hdlabs.electrosmeta.data.local.EstimateStatus
 import ru.hdlabs.electrosmeta.data.local.EstimateType
 import ru.hdlabs.electrosmeta.data.settings.AppSettings
+import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 
 @Serializable
 data class BackupFileV1(
@@ -67,6 +68,7 @@ data class BackupEstimate(
     val status: String,
     val clientName: String?,
     val clientAddress: String?,
+    val workTitle: String? = null,
     val discountPercent: Double,
     val discountAmountKopecks: Long,
     val extraFeeKopecks: Long,
@@ -108,8 +110,8 @@ fun AppSettings.toBackup() = BackupSettings(
     offerValidityDays = offerValidityDays,
     defaultTaxPercent = defaultTaxPercent,
     taxLabel = taxLabel,
-    githubOwner = githubOwner,
-    githubRepo = githubRepo,
+    githubOwner = ReleaseUpdateConfig.githubOwner,
+    githubRepo = ReleaseUpdateConfig.githubRepo,
     showComplexityInPdf = showComplexityInPdf,
 )
 
@@ -130,8 +132,6 @@ fun BackupSettings.toAppSettings() = AppSettings(
     offerValidityDays = offerValidityDays,
     defaultTaxPercent = defaultTaxPercent,
     taxLabel = taxLabel,
-    githubOwner = githubOwner,
-    githubRepo = githubRepo,
     showComplexityInPdf = showComplexityInPdf,
 )
 

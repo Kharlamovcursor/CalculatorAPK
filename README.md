@@ -5,7 +5,8 @@
 ## Сборка
 
 **Удобная настройка с нуля (рекомендуется):** [docs/УДОБНАЯ_НАСТРОЙКА.md](docs/УДОБНАЯ_НАСТРОЙКА.md).  
-Кратко только про сборку APK: [docs/BUILD_APK.md](docs/BUILD_APK.md).
+Кратко только про сборку APK: [docs/BUILD_APK.md](docs/BUILD_APK.md) (в том числе раздел «Ускорение сборки»).  
+Релиз в Android Studio + GitHub + проверка обновления: [docs/RELEASE_GITHUB.md](docs/RELEASE_GITHUB.md).
 
 1. Установите [Android Studio](https://developer.android.com/studio) (JDK 17).
 2. Откройте папку `D:\Projects\CalculatorAPK`.
@@ -25,12 +26,8 @@ cp keystore.properties.example keystore.properties
 
 ## Обновления через GitHub
 
-1. Создайте публичный репозиторий только для релизов (без секретов).
-2. В приложении: **Настройки → О приложении** — укажите `GitHub owner` и `repo`.
-3. Публикуйте релиз с файлом `.apk` и тегом вида `v1.0.1`.
-4. В приложении нажмите **Проверить обновления** → **Скачать** → подтвердите установку.
-
-Либо задайте значения при сборке в `app/build.gradle.kts` (`GITHUB_RELEASES_OWNER`, `GITHUB_RELEASES_REPO`).
+1. Публикуйте в репозитории **Release** с файлом `.apk` и тегом вида `v1.0.2` (репозиторий зашит в сборку: `Kharlamovcursor/CalculatorAPK`, см. `GITHUB_RELEASES_*` в `app/build.gradle.kts`).
+2. В приложении: **Настройки → О приложении** → **Проверить обновления** → **Скачать** → подтвердите установку.
 
 ## Резервная копия
 

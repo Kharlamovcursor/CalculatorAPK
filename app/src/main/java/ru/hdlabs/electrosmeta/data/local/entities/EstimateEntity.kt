@@ -13,6 +13,7 @@ data class EstimateEntity(
     val status: EstimateStatus,
     val clientName: String?,
     val clientAddress: String?,
+    val workTitle: String? = null,
     val discountPercent: Double,
     val discountAmountKopecks: Long,
     val extraFeeKopecks: Long,

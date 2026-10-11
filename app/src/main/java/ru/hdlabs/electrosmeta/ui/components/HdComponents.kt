@@ -1,9 +1,16 @@
 package ru.hdlabs.electrosmeta.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -13,7 +20,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -24,6 +30,49 @@ import ru.hdlabs.electrosmeta.ui.theme.HdPanel
 import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
+
+val HdQuickUnits: List<String> = listOf("шт", "шт.", "м")
+
+@Composable
+fun HdUnitChoiceRow(
+    selected: String,
+    onSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Единица",
+) {
+    Text(label, color = HdTextSecondary, modifier = Modifier.padding(bottom = 6.dp))
+    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        HdQuickUnits.forEach { unit ->
+            val active = selected == unit
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onSelected(unit) },
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (active) HdBlue.copy(alpha = 0.35f) else HdPanel,
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (active) HdOrange.copy(alpha = 0.8f) else HdTextSecondary.copy(alpha = 0.35f),
+                ),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        unit,
+                        color = if (active) HdTextPrimary else HdTextSecondary,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun HdScreenRoot(
@@ -56,9 +105,9 @@ fun HdCard(
 @Composable
 fun HdPrimaryButton(
     text: String,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
@@ -82,8 +131,8 @@ fun HdPrimaryButton(
 @Composable
 fun HdSecondaryButton(
     text: String,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,

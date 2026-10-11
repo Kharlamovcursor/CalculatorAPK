@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import ru.hdlabs.electrosmeta.data.local.dao.CategoryDao
 import ru.hdlabs.electrosmeta.data.local.dao.EstimateDao
 import ru.hdlabs.electrosmeta.data.local.dao.ServiceDao
@@ -20,7 +22,7 @@ import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
         EstimateEntity::class,
         EstimateLineEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -30,6 +32,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun estimateDao(): EstimateDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE estimates ADD COLUMN workTitle TEXT")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -39,7 +47,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "electrosmeta.db",
-                ).build().also { instance = it }
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build().also { instance = it }
             }
         }
     }

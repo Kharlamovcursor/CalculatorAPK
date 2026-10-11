@@ -19,7 +19,5 @@ data class AppSettings(
     val offerValidityDays: Int = 14,
     val defaultTaxPercent: Double = 0.0,
     val taxLabel: String = "Без НДС",
-    val githubOwner: String = "",
-    val githubRepo: String = "",
-    val showComplexityInPdf: Boolean = true,
+    val showComplexityInPdf: Boolean = false,
 )

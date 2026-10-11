@@ -32,6 +32,7 @@ class EstimateRepository(
                 status = EstimateStatus.DRAFT,
                 clientName = null,
                 clientAddress = null,
+                workTitle = null,
                 discountPercent = 0.0,
                 discountAmountKopecks = 0,
                 extraFeeKopecks = 0,

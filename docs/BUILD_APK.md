@@ -19,19 +19,29 @@
 
 Переименуйте при отправке, например: `HDLabs-Electrosmeta-1.0.0-debug.apk`.
 
-## 4. Release APK (для мастеров)
+## 4. Release APK (для мастеров) — только через Android Studio
 
-1. Создайте ключ (один раз):
+**Не используйте** **Build → Build APK(s)** для раздачи мастерам: это **debug** (~60 МБ, другая подпись).
+
+### Один раз: ключ
 
 ```bat
 keytool -genkeypair -v -keystore release.keystore -alias hdlabs -keyalg RSA -keysize 2048 -validity 10000
 ```
 
-2. Скопируйте `keystore.properties.example` → `keystore.properties` и заполните пути/пароли.
+Скопируйте `keystore.properties.example` → `keystore.properties` и заполните пути/пароли.
 
-3. **Build → Generate Signed Bundle / APK → APK → release**
+### Каждый релиз в Studio
 
-Файл: `app\build\outputs\apk\release\app-release.apk`
+1. В `app/build.gradle.kts` увеличьте `versionCode` и `versionName` → **Sync**.
+2. **Build → Generate Signed App Bundle or APK** → **APK**.
+3. Keystore: `release.keystore`, alias `hdlabs` (пароли локально).
+4. Вариант сборки: **release** → Finish.
+5. Файл: `app\build\outputs\apk\release\app-release.apk` (смотрите дату файла).
+
+Если APK «старый»: **Build → Clean Project**, затем снова Signed APK.
+
+**Полная инструкция (GitHub Releases + проверка обновления):** [RELEASE_GITHUB.md](RELEASE_GITHUB.md).
 
 ## 5. Установка на телефон
 
@@ -41,13 +51,27 @@ keytool -genkeypair -v -keystore release.keystore -alias hdlabs -keyalg RSA -key
 
 ## 6. GitHub Releases (обновления)
 
-1. Создайте репозиторий, например `hdlabs-electrosmeta-releases`.
-2. **Releases → Create new release**, тег `v1.0.1`, приложите `app-release.apk`.
-3. В приложении: **Настройки → О приложении** — укажите owner и имя репозитория.
-4. **Проверить обновления** → скачать → установить.
+Репозиторий в приложении уже задан: `Kharlamovcursor/CalculatorAPK`.
 
-Важно: все релизы подписывайте **тем же keystore**, иначе обновление не установится поверх старой версии.
+1. Соберите **signed release** APK (раздел 4).
+2. На GitHub: **Releases → New release**, тег **`v{N}`**, где **N = `versionCode`** из `build.gradle.kts` (например `v5`).
+3. Прикрепите `app-release.apk`.
+4. В приложении: **Настройки → О приложении → Проверить обновления**.
+
+Подробно: [RELEASE_GITHUB.md](RELEASE_GITHUB.md).
+
+Все релизы подписывайте **тем же** `release.keystore`, иначе обновление не установится поверх старой версии.
 
 ## 7. Проверка на эмуляторе
 
 **Device Manager → Create Device** → запуск → зелёная кнопка **Run** (▶) в Android Studio.
+
+## Ускорение сборки
+
+При **16 ГБ** оперативной памяти в `gradle.properties` для Gradle daemon задано около **5 ГБ** (`-Xmx5120m`); перед тяжёлой сборкой имеет смысл закрыть лишние программы, чтобы оставалось свободно **6–7 ГБ**. Параметр **`org.gradle.workers.max=4`** ограничивает число параллельных worker’ов и снижает пики RAM при `org.gradle.parallel=true`.
+
+- Для ежедневной работы удобнее **Android Studio** (Build / Run) — Gradle daemon остаётся в памяти и повторные сборки быстрее.
+- В командной строке не добавляйте **`--no-daemon`** без необходимости: каждый запуск с ним холодный и медленнее.
+- Для CLI задайте **`JAVA_HOME`** на JDK 21 (как в `gradle.properties`, `org.gradle.java.home`), чтобы не тратить время на поиск JDK.
+- Быстрая проверка компиляции без полного APK: `gradlew compileReleaseKotlin` (или `compileDebugKotlin`).
+- **Первая** сборка после клонирования или обновления зависимостей долгая — Gradle и Android SDK скачивают артефакты; следующие сборки обычно заметно быстрее.

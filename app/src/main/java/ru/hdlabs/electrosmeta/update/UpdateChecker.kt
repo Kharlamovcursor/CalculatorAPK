@@ -47,29 +47,47 @@ class GitHubUpdateSource(
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "HDLabs-Electrosmeta-Android")
         }
-        connection.inputStream.use { stream ->
-            val text = stream.bufferedReader().readText()
-            val release = json.decodeFromString<GitHubRelease>(text)
-            val apk = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
-                ?: return null
-            val remoteCode = parseVersionCode(release.tagName)
-            if (remoteCode <= currentVersionCode) return null
-            return UpdateInfo(
-                versionName = release.tagName,
-                changelog = release.body ?: "",
-                apkUrl = apk.downloadUrl,
-                apkFileName = apk.name,
+        val code = connection.responseCode
+        val text = (if (code in 200..299) connection.inputStream else connection.errorStream)
+            ?.bufferedReader()?.readText() ?: ""
+        if (code !in 200..299) {
+            throw IllegalStateException(
+                when (code) {
+                    404 -> "Релиз не найден. Создайте Release на GitHub с файлом .apk"
+                    403 -> "Доступ запрещён (лимит API или приватный репозиторий)"
+                    else -> "GitHub ответил: HTTP $code"
+                },
             )
         }
+        val release = json.decodeFromString<GitHubRelease>(text)
+        val apk = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+            ?: throw IllegalStateException("В последнем Release нет файла .apk")
+        val remoteCode = parseVersionCode(release.tagName)
+        if (remoteCode <= currentVersionCode) return null
+        return UpdateInfo(
+            versionName = release.tagName,
+            changelog = release.body ?: "",
+            apkUrl = apk.downloadUrl,
+            apkFileName = apk.name,
+        )
     }
 
     private fun parseVersionCode(tag: String): Int {
+        val stripped = tag.trim().removePrefix("v").removePrefix("V")
+        stripped.toIntOrNull()?.let { return it }
         val digits = tag.filter { it.isDigit() || it == '.' }
         val parts = digits.split('.').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return BuildConfig.VERSION_CODE
+        if (parts.size >= 3) {
+            val major = parts[0].toIntOrNull() ?: 0
+            val minor = parts[1].toIntOrNull() ?: 0
+            val patch = parts[2].toIntOrNull() ?: 0
+            return major * 10000 + minor * 100 + patch
+        }
         return parts.take(3).fold(0) { acc, part ->
-            acc * 1000 + part.toIntOrNull()?.coerceIn(0, 999) ?: 0
+            acc * 1000 + (part.toIntOrNull()?.coerceIn(0, 999) ?: 0)
         }
     }
 }

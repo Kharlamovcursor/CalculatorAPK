@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import ru.hdlabs.electrosmeta.BuildConfig
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -34,9 +33,7 @@ class SettingsRepository(private val context: Context) {
             offerValidityDays = prefs[Keys.VALIDITY] ?: 14,
             defaultTaxPercent = prefs[Keys.TAX_PERCENT] ?: 0.0,
             taxLabel = prefs[Keys.TAX_LABEL] ?: "Без НДС",
-            githubOwner = prefs[Keys.GH_OWNER] ?: BuildConfig.GITHUB_RELEASES_OWNER,
-            githubRepo = prefs[Keys.GH_REPO] ?: BuildConfig.GITHUB_RELEASES_REPO,
-            showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: true,
+            showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: false,
         )
     }
 
@@ -59,9 +56,7 @@ class SettingsRepository(private val context: Context) {
                 offerValidityDays = prefs[Keys.VALIDITY] ?: 14,
                 defaultTaxPercent = prefs[Keys.TAX_PERCENT] ?: 0.0,
                 taxLabel = prefs[Keys.TAX_LABEL] ?: "Без НДС",
-                githubOwner = prefs[Keys.GH_OWNER] ?: BuildConfig.GITHUB_RELEASES_OWNER,
-                githubRepo = prefs[Keys.GH_REPO] ?: BuildConfig.GITHUB_RELEASES_REPO,
-                showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: true,
+                showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: false,
             )
             val updated = transform(current)
             prefs[Keys.ANIM_SPEED] = updated.animationSpeedPercent
@@ -80,8 +75,6 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.VALIDITY] = updated.offerValidityDays
             prefs[Keys.TAX_PERCENT] = updated.defaultTaxPercent
             prefs[Keys.TAX_LABEL] = updated.taxLabel
-            prefs[Keys.GH_OWNER] = updated.githubOwner
-            prefs[Keys.GH_REPO] = updated.githubRepo
             prefs[Keys.SHOW_COMPLEXITY] = updated.showComplexityInPdf
         }
     }
@@ -103,8 +96,6 @@ class SettingsRepository(private val context: Context) {
         val VALIDITY = intPreferencesKey("validity")
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
         val TAX_LABEL = stringPreferencesKey("tax_label")
-        val GH_OWNER = stringPreferencesKey("gh_owner")
-        val GH_REPO = stringPreferencesKey("gh_repo")
         val SHOW_COMPLEXITY = booleanPreferencesKey("show_complexity")
     }
 }

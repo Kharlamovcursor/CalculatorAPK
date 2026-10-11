@@ -9,5 +9,6 @@
 .cxx
 app/build
 keystore.properties
+signing-credentials.local.txt
 *.jks
 *.keystore

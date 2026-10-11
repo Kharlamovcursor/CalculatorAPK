@@ -4,8 +4,21 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -28,8 +41,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -46,8 +63,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import ru.hdlabs.electrosmeta.ui.theme.HdBlue
+import ru.hdlabs.electrosmeta.ui.theme.HdOrange
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,12 +92,16 @@ import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.data.settings.AppSettings
 import ru.hdlabs.electrosmeta.domain.parseRublesToKopecks
 import ru.hdlabs.electrosmeta.domain.formatRubles
+import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorUiState
 import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorViewModel
 import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
+import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 import ru.hdlabs.electrosmeta.update.UpdateInfo
 import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
 import ru.hdlabs.electrosmeta.ui.components.HdCard
 import ru.hdlabs.electrosmeta.ui.components.HdPrimaryButton
+import ru.hdlabs.electrosmeta.ui.components.HdQuickUnits
+import ru.hdlabs.electrosmeta.ui.components.HdUnitChoiceRow
 import ru.hdlabs.electrosmeta.ui.components.HdSecondaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
@@ -124,6 +149,7 @@ private fun HdScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
     scroll: Boolean = true,
+    showTopBar: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -131,17 +157,19 @@ private fun HdScaffold(
         Scaffold(
             containerColor = HdBlack.copy(alpha = 0.55f),
             topBar = {
-                TopAppBar(
-                    title = { Text(title, color = HdTextPrimary) },
-                    navigationIcon = {
-                        if (onBack != null) {
-                            IconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = HdTextPrimary)
+                if (showTopBar) {
+                    TopAppBar(
+                        title = { Text(title, color = HdTextPrimary) },
+                        navigationIcon = {
+                            if (onBack != null) {
+                                IconButton(onClick = onBack) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = HdTextPrimary)
+                                }
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = HdBlack.copy(alpha = 0.7f)),
-                )
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = HdBlack.copy(alpha = 0.7f)),
+                    )
+                }
             },
         ) { padding ->
             val mod = Modifier
@@ -158,25 +186,80 @@ private fun HdScaffold(
 
 @Composable
 private fun HomeScreen(nav: NavHostController) {
-    HdScaffold(title = "HDLabs ЭлектроСмета", scroll = false) {
-        Image(
-            painter = painterResource(R.drawable.hdlabs_logo),
-            contentDescription = "HDLabs",
-            modifier = Modifier
-                .width(220.dp)
-                .padding(bottom = 12.dp),
-            contentScale = ContentScale.Fit,
-        )
-        Text("Калькулятор электромонтажных работ", color = HdTextSecondary, modifier = Modifier.padding(bottom = 16.dp))
-        HdPrimaryButton("Новый расчёт", onClick = { nav.navigate(Routes.NEW_TYPE) })
-        Spacer(Modifier.height(12.dp))
-        HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
-        Spacer(Modifier.height(12.dp))
-        HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
-        Spacer(Modifier.height(12.dp))
-        HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
-        Spacer(Modifier.height(24.dp))
-        Text("Версия ${BuildConfig.VERSION_NAME}", color = HdTextSecondary)
+    val app = LocalContext.current.applicationContext as ElectrosmetaApplication
+    val scope = rememberCoroutineScope()
+    var showNewEstimateOptions by remember { mutableStateOf(false) }
+
+    HdScaffold(title = "", scroll = false, showTopBar = false) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(1f))
+            Column(
+                Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.calc_home_logo),
+                    contentDescription = "Calc by HDLabs",
+                    modifier = Modifier
+                        .fillMaxWidth(0.78f)
+                        .padding(bottom = 20.dp),
+                    contentScale = ContentScale.Fit,
+                )
+                HdPrimaryButton(
+                    text = if (showNewEstimateOptions) "Скрыть варианты" else "Новый расчёт",
+                    onClick = { showNewEstimateOptions = !showNewEstimateOptions },
+                )
+                AnimatedVisibility(
+                    visible = showNewEstimateOptions,
+                    enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(240)),
+                    exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(tween(200)),
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        HdPrimaryButton("Основной расчёт") {
+                            showNewEstimateOptions = false
+                            scope.launch {
+                                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                                val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
+                                nav.navigate(Routes.estimate(id))
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        HdSecondaryButton("Быстрый расчёт") {
+                            showNewEstimateOptions = false
+                            scope.launch {
+                                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                                val id = app.container.estimateRepository.createDraft(EstimateType.QUICK, tax)
+                                nav.navigate(Routes.estimate(id))
+                            }
+                        }
+                    }
+                }
+                if (!showNewEstimateOptions) {
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Версия ${BuildConfig.VERSION_NAME}",
+                color = HdTextSecondary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
     }
 }
 
@@ -184,20 +267,26 @@ private fun HomeScreen(nav: NavHostController) {
 private fun NewEstimateTypeScreen(nav: NavHostController) {
     val app = LocalContext.current.applicationContext as ElectrosmetaApplication
     val scope = rememberCoroutineScope()
-    HdScaffold(title = "Новый расчёт", onBack = { nav.popBackStack() }) {
-        HdPrimaryButton("Основной расчёт") {
-            scope.launch {
-                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
-                nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+    HdScaffold(title = "Новый расчёт", onBack = { nav.popBackStack() }, scroll = false) {
+        Column(
+            Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            HdPrimaryButton("Основной расчёт") {
+                scope.launch {
+                    val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                    val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
+                    nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+                }
             }
-        }
-        Spacer(Modifier.height(12.dp))
-        HdSecondaryButton("Быстрый расчёт") {
-            scope.launch {
-                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                val id = app.container.estimateRepository.createDraft(EstimateType.QUICK, tax)
-                nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+            Spacer(Modifier.height(12.dp))
+            HdSecondaryButton("Быстрый расчёт") {
+                scope.launch {
+                    val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                    val id = app.container.estimateRepository.createDraft(EstimateType.QUICK, tax)
+                    nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+                }
             }
         }
     }
@@ -305,8 +394,6 @@ private fun PriceListScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
 
     HdScaffold(title = "Прайс-лист", onBack = { nav.popBackStack() }) {
-        Text("Ориентировочные цены СПб. Изменения не затрагивают старые сметы.", color = HdTextSecondary)
-        Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Добавить категорию") { showAddCategory = true }
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Сбросить к стартовому прайсу") { confirmReset = true }
@@ -370,7 +457,13 @@ private fun PriceListScreen(nav: NavHostController) {
         AlertDialog(
             onDismissRequest = { confirmReset = false },
             title = { Text("Сбросить прайс?") },
-            text = { Text("Текущий активный прайс будет архивирован и загружен стартовый список СПб.", color = HdTextSecondary) },
+            text = {
+                Text(
+                    "Текущий активный прайс будет архивирован и заменён стартовым списком услуг. " +
+                        "Уже созданные расчёты не изменятся.",
+                    color = HdTextSecondary,
+                )
+            },
             confirmButton = {
                 HdPrimaryButton("Сбросить") {
                     scope.launch {
@@ -422,6 +515,8 @@ private fun SettingsScreen(nav: NavHostController) {
     var importPreview by remember { mutableStateOf<BackupSummary?>(null) }
     var importMessage by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
+    var taxLabel by remember(settings) { mutableStateOf(settings.taxLabel) }
+    var taxPercent by remember(settings) { mutableStateOf(settings.defaultTaxPercent.toString()) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -465,6 +560,27 @@ private fun SettingsScreen(nav: NavHostController) {
             Switch(settings.powerSaveMode, onCheckedChange = {
                 scope.launch { app.container.settingsRepository.update { s -> s.copy(powerSaveMode = it) } }
             })
+        }
+        Spacer(Modifier.height(16.dp))
+        HdCard {
+            Text("Налог в сметах", color = HdTextPrimary)
+            Text(
+                "Задаётся один раз — применяется ко всем новым расчётам и PDF.",
+                color = HdTextSecondary,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            HdTextField(taxLabel, { taxLabel = it }, "Подпись (например «Без НДС»)")
+            HdTextField(taxPercent, { taxPercent = it }, "Налог, % (0 = без налога)")
+            HdSecondaryButton("Сохранить налог") {
+                scope.launch {
+                    app.container.settingsRepository.update {
+                        it.copy(
+                            taxLabel = taxLabel,
+                            defaultTaxPercent = taxPercent.replace(',', '.').toDoubleOrNull() ?: 0.0,
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(16.dp))
         HdSecondaryButton("Реквизиты и PDF") { nav.navigate(Routes.ABOUT) }
@@ -553,10 +669,6 @@ private fun AboutScreen(nav: NavHostController) {
     var pdfTitle by remember(settings) { mutableStateOf(settings.pdfTitle) }
     var pdfIntro by remember(settings) { mutableStateOf(settings.pdfIntro) }
     var pdfFooter by remember(settings) { mutableStateOf(settings.pdfFooter) }
-    var taxPercent by remember(settings) { mutableStateOf(settings.defaultTaxPercent.toString()) }
-    var taxLabel by remember(settings) { mutableStateOf(settings.taxLabel) }
-    var ghOwner by remember(settings) { mutableStateOf(settings.githubOwner) }
-    var ghRepo by remember(settings) { mutableStateOf(settings.githubRepo) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var updateMessage by remember { mutableStateOf("") }
 
@@ -572,11 +684,6 @@ private fun AboutScreen(nav: NavHostController) {
         HdTextField(pdfTitle, { pdfTitle = it }, "Заголовок PDF")
         HdTextField(pdfIntro, { pdfIntro = it }, "Вступление PDF")
         HdTextField(pdfFooter, { pdfFooter = it }, "Подвал PDF")
-        HdTextField(taxLabel, { taxLabel = it }, "Подпись налога")
-        HdTextField(taxPercent, { taxPercent = it }, "Налог, % (0 = без НДС)")
-        HdTextField(ghOwner, { ghOwner = it }, "GitHub owner (релизы)")
-        HdTextField(ghRepo, { ghRepo = it }, "GitHub repo (релизы)")
-        Spacer(Modifier.height(8.dp))
         HdPrimaryButton("Сохранить настройки") {
             scope.launch {
                 app.container.settingsRepository.update {
@@ -592,10 +699,6 @@ private fun AboutScreen(nav: NavHostController) {
                         pdfTitle = pdfTitle,
                         pdfIntro = pdfIntro,
                         pdfFooter = pdfFooter,
-                        taxLabel = taxLabel,
-                        defaultTaxPercent = taxPercent.replace(',', '.').toDoubleOrNull() ?: 0.0,
-                        githubOwner = ghOwner,
-                        githubRepo = ghRepo,
                     )
                 }
             }
@@ -604,11 +707,29 @@ private fun AboutScreen(nav: NavHostController) {
         HdSecondaryButton("Проверить обновления") {
             scope.launch {
                 updateMessage = "Проверка…"
-                val source = app.container.updateSource(ghOwner, ghRepo)
-                updateInfo = withContext(Dispatchers.IO) {
-                    source.checkForUpdate(BuildConfig.VERSION_CODE)
+                updateInfo = null
+                if (!ReleaseUpdateConfig.isConfigured()) {
+                    updateMessage = "Репозиторий обновлений не настроен в сборке приложения"
+                    return@launch
                 }
-                updateMessage = if (updateInfo == null) "Обновлений нет" else "Доступно: ${updateInfo?.versionName}"
+                try {
+                    val source = app.container.updateSource(
+                        ReleaseUpdateConfig.githubOwner,
+                        ReleaseUpdateConfig.githubRepo,
+                    )
+                    updateInfo = withContext(Dispatchers.IO) {
+                        source.checkForUpdate(BuildConfig.VERSION_CODE)
+                    }
+                    updateMessage = if (updateInfo == null) {
+                        "У вас актуальная версия ${BuildConfig.VERSION_NAME}. " +
+                            "Или в Releases нет APK новее текущей."
+                    } else {
+                        "Доступно: ${updateInfo?.versionName}"
+                    }
+                } catch (e: Exception) {
+                    updateInfo = null
+                    updateMessage = e.message ?: "Не удалось проверить обновления"
+                }
             }
         }
         if (updateMessage.isNotBlank()) Text(updateMessage, color = HdTextSecondary)
@@ -660,33 +781,48 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var title by remember(estimate?.id) { mutableStateOf(estimate?.title ?: "") }
     var clientName by remember(estimate?.id) { mutableStateOf(estimate?.clientName ?: "") }
     var clientAddress by remember(estimate?.id) { mutableStateOf(estimate?.clientAddress ?: "") }
+    var workTitle by remember(estimate?.id) { mutableStateOf(estimate?.workTitle ?: "") }
+    var showServicePicker by remember { mutableStateOf(false) }
     var discountPct by remember(estimate?.id) { mutableStateOf(estimate?.discountPercent?.toString() ?: "0") }
     var discountAmt by remember(estimate?.id) { mutableStateOf(((estimate?.discountAmountKopecks ?: 0) / 100).toString()) }
     var extraFee by remember(estimate?.id) { mutableStateOf(((estimate?.extraFeeKopecks ?: 0) / 100).toString()) }
     var complexity by remember(estimate?.id) { mutableStateOf(estimate?.complexityMultiplier?.toString() ?: "1.0") }
-    var taxPct by remember(estimate?.id) { mutableStateOf(estimate?.taxPercent?.toString() ?: "0") }
     var comment by remember(estimate?.id) { mutableStateOf(estimate?.comment ?: "") }
     var quickName by remember { mutableStateOf("") }
     var quickUnit by remember { mutableStateOf("шт.") }
     var quickPrice by remember { mutableStateOf("") }
     var quickQty by remember { mutableStateOf("1") }
-    var search by remember { mutableStateOf("") }
     var showPdfPreview by remember { mutableStateOf(false) }
+    var showPdfReady by remember { mutableStateOf(false) }
+    var generatedPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var generatedPdfSizeLabel by remember { mutableStateOf("") }
 
     fun saveFields() {
         vm.saveEstimateFields(
-            title, clientName, clientAddress,
+            title, clientName, clientAddress, workTitle,
             discountPct.replace(',', '.').toDoubleOrNull() ?: 0.0,
             parseRublesToKopecks(discountAmt) ?: 0L,
             parseRublesToKopecks(extraFee) ?: 0L,
             complexity.replace(',', '.').toDoubleOrNull() ?: 1.0,
-            taxPct.replace(',', '.').toDoubleOrNull() ?: 0.0,
+            settings.defaultTaxPercent,
             true,
             comment,
         )
     }
 
-    LaunchedEffect(title, clientName, clientAddress, discountPct, discountAmt, extraFee, complexity, taxPct, comment) {
+    LaunchedEffect(
+        title,
+        clientName,
+        clientAddress,
+        workTitle,
+        discountPct,
+        discountAmt,
+        extraFee,
+        complexity,
+        settings.defaultTaxPercent,
+        settings.taxLabel,
+        comment,
+    ) {
         if (state.loading || estimate == null) return@LaunchedEffect
         delay(900)
         saveFields()
@@ -697,55 +833,87 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             Text("Загрузка…", color = HdTextSecondary)
             return@HdScaffold
         }
-        HdTextField(title, { title = it }, "Название расчёта")
-        HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
-        HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
-
         if (estimate?.type == EstimateType.MAIN) {
-            if (state.favorites.isNotEmpty()) {
-                Text("Избранное", color = HdTextPrimary, modifier = Modifier.padding(top = 8.dp))
-                state.favorites.forEach { svc ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(svc.name, color = HdTextSecondary, modifier = Modifier.weight(1f))
-                        Text("+", color = HdTextPrimary, modifier = Modifier.clickable { vm.addService(svc) })
-                    }
-                }
+            HdCard(Modifier.padding(bottom = 12.dp)) {
+                Text("Данные расчёта", color = HdTextPrimary)
+                Spacer(Modifier.height(8.dp))
+                HdTextField(title, { title = it }, "Название расчёта")
+                HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
+                HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
+                HdTextField(workTitle, { workTitle = it }, "Название работ")
             }
-            HdTextField(search, { search = it; vm.search(it) }, "Поиск услуги")
-            state.searchResults.forEach { svc ->
-                HdCard(Modifier.padding(vertical = 4.dp)) {
-                    Text(svc.name, color = HdTextPrimary)
-                    Text("${formatRubles(svc.priceKopecks)} / ${svc.unit}", color = HdTextSecondary)
-                    Text("Добавить", modifier = Modifier.clickable { vm.addService(svc) })
+            HdCard(Modifier.padding(bottom = 12.dp)) {
+                Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(
+                            BorderStroke(
+                                1.5.dp,
+                                Brush.horizontalGradient(listOf(HdBlue, HdOrange)),
+                            ),
+                            RoundedCornerShape(14.dp),
+                        )
+                        .clickable { showServicePicker = !showServicePicker }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (showServicePicker) "Скрыть выбор из прайса" else "Добавить из прайса",
+                        color = HdTextPrimary,
+                    )
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = null,
+                        tint = HdOrange,
+                    )
                 }
-            }
-            state.categories.forEach { cat ->
-                val items = state.servicesByCategory[cat.id] ?: emptyList()
-                if (items.isNotEmpty()) {
-                    Text(cat.name, color = HdTextPrimary, modifier = Modifier.padding(top = 8.dp))
-                    items.take(5).forEach { svc ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(svc.name, color = HdTextSecondary, modifier = Modifier.weight(1f))
-                            Text("+", color = HdTextPrimary, modifier = Modifier.clickable { vm.addService(svc) })
-                        }
-                    }
+                AnimatedVisibility(
+                    visible = showServicePicker,
+                    enter = expandVertically(animationSpec = tween(320)) + fadeIn(animationSpec = tween(280)),
+                    exit = shrinkVertically(animationSpec = tween(260)) + fadeOut(animationSpec = tween(220)),
+                ) {
+                    MainServicePickerPanel(
+                        state = state,
+                        onAddServices = vm::addServices,
+                    )
                 }
             }
         } else {
-            HdTextField(quickName, { quickName = it }, "Название работы")
-            HdTextField(quickUnit, { quickUnit = it }, "Единица")
-            HdTextField(quickPrice, { quickPrice = it }, "Цена, ₽")
-            HdTextField(quickQty, { quickQty = it }, "Количество")
-            HdSecondaryButton("Добавить строку") {
-                vm.addQuickLine(quickName, quickUnit, quickPrice, quickQty)
-                quickName = ""
+            HdCard(Modifier.padding(bottom = 12.dp)) {
+                Text("Данные расчёта", color = HdTextPrimary)
+                Spacer(Modifier.height(8.dp))
+                HdTextField(title, { title = it }, "Название расчёта")
+                HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
+                HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
+            }
+            HdCard(Modifier.padding(bottom = 12.dp)) {
+                Text("Новая позиция", color = HdTextPrimary)
+                Spacer(Modifier.height(8.dp))
+                HdTextField(quickName, { quickName = it }, "Название работы")
+                HdUnitChoiceRow(quickUnit, { quickUnit = it })
+                Spacer(Modifier.height(8.dp))
+                HdTextField(quickPrice, { quickPrice = it }, "Цена, ₽")
+                HdTextField(quickQty, { quickQty = it }, "Количество")
+                HdSecondaryButton("Добавить в смету") {
+                    vm.addQuickLine(quickName, quickUnit, quickPrice, quickQty)
+                    quickName = ""
+                }
             }
         }
 
         Spacer(Modifier.height(12.dp))
         Text("Позиции", color = HdTextPrimary)
+        val isQuick = estimate?.type == EstimateType.QUICK
         state.lines.forEach { line ->
-            LineEditor(line, onUpdate = vm::updateLine, onDelete = { vm.removeLine(line.id) })
+            LineEditor(
+                line,
+                allowUnitChoice = isQuick,
+                onUpdate = vm::updateLine,
+                onDelete = { vm.removeLine(line.id) },
+            )
         }
 
         Spacer(Modifier.height(12.dp))
@@ -765,7 +933,6 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                 )
             }
         }
-        HdTextField(taxPct, { taxPct = it }, "Налог, %")
         HdTextField(comment, { comment = it }, "Комментарий")
 
         state.calculation?.let {
@@ -781,7 +948,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
         val total = state.calculation?.totalKopecks
         AlertDialog(
             onDismissRequest = { showPdfPreview = false },
-            title = { Text("Предпросмотр сметы") },
+            title = { Text("Проверка перед PDF") },
             text = {
                 Column {
                     Text("Клиент: ${clientName.ifBlank { "—" }}", color = HdTextSecondary)
@@ -799,18 +966,250 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                         val calc = vm.state.value.calculation ?: return@launch
                         val file = File(context.cacheDir, "smeta_${estimateId}.pdf")
                         app.container.pdfGenerator.generate(data, settings, calc, file)
-                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file,
+                        )
+                        generatedPdfUri = uri
+                        generatedPdfSizeLabel = when {
+                            file.length() < 1024 -> "${file.length()} Б"
+                            else -> "${file.length() / 1024} КБ"
+                        }
+                        showPdfPreview = false
+                        showPdfReady = true
+                    }
+                }
+            },
+            dismissButton = { HdSecondaryButton("Отмена") { showPdfPreview = false } },
+        )
+    }
+
+    if (showPdfReady) {
+        val uri = generatedPdfUri
+        AlertDialog(
+            onDismissRequest = { showPdfReady = false },
+            title = { Text("PDF готов") },
+            text = {
+                Text(
+                    "Размер файла: $generatedPdfSizeLabel. Логотип HDLabs в PDF не добавляется.",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Открыть") {
+                    if (uri != null) {
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "application/pdf")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(intent)
+                    }
+                    showPdfReady = false
+                }
+            },
+            dismissButton = {
+                HdSecondaryButton("Отправить") {
+                    if (uri != null) {
                         val intent = Intent(Intent.ACTION_SEND).apply {
                             type = "application/pdf"
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         context.startActivity(Intent.createChooser(intent, "Отправить смету"))
-                        showPdfPreview = false
                     }
+                    showPdfReady = false
                 }
             },
-            dismissButton = { HdSecondaryButton("Отмена") { showPdfPreview = false } },
+        )
+    }
+}
+
+private const val FAVORITES_PICKER_CATEGORY_ID = -1L
+
+private enum class ServicePickerStep { Categories, Services }
+
+@Composable
+private fun MainServicePickerPanel(
+    state: EstimateEditorUiState,
+    onAddServices: (List<ServiceEntity>) -> Unit,
+) {
+    var step by remember { mutableStateOf(ServicePickerStep.Categories) }
+    var activeCategoryId by remember { mutableStateOf<Long?>(null) }
+    var selectedServiceIds by remember { mutableStateOf(setOf<Long>()) }
+
+    val servicesInCategory: List<ServiceEntity> = when (activeCategoryId) {
+        FAVORITES_PICKER_CATEGORY_ID -> state.favorites
+        null -> emptyList()
+        else -> state.servicesByCategory[activeCategoryId] ?: emptyList()
+    }
+    val activeCategoryLabel = when (activeCategoryId) {
+        FAVORITES_PICKER_CATEGORY_ID -> "Избранное"
+        null -> ""
+        else -> state.categories.find { it.id == activeCategoryId }?.name ?: ""
+    }
+
+    Column(Modifier.padding(top = 12.dp)) {
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                if (targetState == ServicePickerStep.Services) {
+                    slideInHorizontally(animationSpec = tween(300)) { it / 3 } + fadeIn(tween(280)) togetherWith
+                        slideOutHorizontally(animationSpec = tween(300)) { -it / 3 } + fadeOut(tween(220))
+                } else {
+                    slideInHorizontally(animationSpec = tween(300)) { -it / 3 } + fadeIn(tween(280)) togetherWith
+                        slideOutHorizontally(animationSpec = tween(300)) { it / 3 } + fadeOut(tween(220))
+                }
+            },
+            label = "servicePickerStep",
+        ) { currentStep ->
+            when (currentStep) {
+                ServicePickerStep.Categories -> {
+                    Column {
+                        Text("Выберите категорию из прайса", color = HdTextSecondary)
+                        Spacer(Modifier.height(8.dp))
+                        if (state.favorites.isNotEmpty()) {
+                            ServiceCategoryChip(
+                                name = "Избранное",
+                                selected = activeCategoryId == FAVORITES_PICKER_CATEGORY_ID,
+                                onClick = {
+                                    activeCategoryId = FAVORITES_PICKER_CATEGORY_ID
+                                    selectedServiceIds = emptySet()
+                                    step = ServicePickerStep.Services
+                                },
+                            )
+                        }
+                        state.categories.forEach { cat ->
+                            val count = state.servicesByCategory[cat.id]?.size ?: 0
+                            if (count > 0) {
+                                ServiceCategoryChip(
+                                    name = cat.name,
+                                    selected = activeCategoryId == cat.id,
+                                    onClick = {
+                                        activeCategoryId = cat.id
+                                        selectedServiceIds = emptySet()
+                                        step = ServicePickerStep.Services
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                ServicePickerStep.Services -> {
+                    Column {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    step = ServicePickerStep.Categories
+                                    selectedServiceIds = emptySet()
+                                    activeCategoryId = null
+                                }
+                                .padding(bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "К категориям",
+                                tint = HdOrange,
+                            )
+                            Text("К категориям", color = HdOrange, modifier = Modifier.padding(start = 6.dp))
+                        }
+                        Text("Категория", color = HdTextSecondary)
+                        ServiceCategoryChip(
+                            name = activeCategoryLabel,
+                            selected = true,
+                            onClick = {},
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text("Отметьте работы в этой категории", color = HdTextSecondary)
+                        Spacer(Modifier.height(6.dp))
+                        servicesInCategory.forEach { svc ->
+                            val checked = selectedServiceIds.contains(svc.id)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        selectedServiceIds = if (checked) {
+                                            selectedServiceIds - svc.id
+                                        } else {
+                                            selectedServiceIds + svc.id
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = { isChecked ->
+                                        selectedServiceIds = if (isChecked) {
+                                            selectedServiceIds + svc.id
+                                        } else {
+                                            selectedServiceIds - svc.id
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = HdOrange,
+                                        checkmarkColor = HdBlack,
+                                        uncheckedColor = HdTextSecondary,
+                                    ),
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(svc.name, color = HdTextPrimary)
+                                    Text(
+                                        "${formatRubles(svc.priceKopecks)} / ${svc.unit}",
+                                        color = HdTextSecondary,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        HdPrimaryButton(
+                            text = if (selectedServiceIds.isEmpty()) {
+                                "Выберите работы"
+                            } else {
+                                "Подтвердить (${selectedServiceIds.size})"
+                            },
+                            enabled = selectedServiceIds.isNotEmpty(),
+                        ) {
+                            val picked = servicesInCategory.filter { selectedServiceIds.contains(it.id) }
+                            onAddServices(picked)
+                            selectedServiceIds = emptySet()
+                            step = ServicePickerStep.Categories
+                            activeCategoryId = null
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServiceCategoryChip(
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(shape)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) HdOrange else HdTextSecondary.copy(alpha = 0.35f),
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            name,
+            color = if (selected) HdOrange else HdTextPrimary,
         )
     }
 }
@@ -818,25 +1217,44 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
 @Composable
 private fun LineEditor(
     line: EstimateLineEntity,
+    allowUnitChoice: Boolean,
     onUpdate: (EstimateLineEntity) -> Unit,
     onDelete: () -> Unit,
 ) {
     var qty by remember(line.id) { mutableStateOf(line.quantity.toString()) }
     var price by remember(line.id) { mutableStateOf((line.unitPriceKopecks / 100.0).toString()) }
     var note by remember(line.id) { mutableStateOf(line.note ?: "") }
+    var unit by remember(line.id) {
+        mutableStateOf(line.unit.takeIf { it in HdQuickUnits } ?: HdQuickUnits.first())
+    }
     HdCard(Modifier.padding(vertical = 4.dp)) {
-        Text(line.name, color = HdTextPrimary)
-        Text(line.unit, color = HdTextSecondary)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Text(line.name, color = HdTextPrimary, modifier = Modifier.weight(1f))
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = HdTextSecondary)
+            }
+        }
+        if (allowUnitChoice) {
+            HdUnitChoiceRow(unit, { unit = it })
+        } else {
+            Text(line.unit, color = HdTextSecondary)
+        }
         HdTextField(qty, { qty = it }, "Кол-во")
         HdTextField(price, { price = it }, "Цена, ₽")
         HdTextField(note, { note = it }, "Примечание")
-        Row {
-            Text("Обновить", modifier = Modifier.clickable {
+        Text(
+            "Обновить",
+            color = HdTextPrimary,
+            modifier = Modifier.clickable {
                 val q = qty.replace(',', '.').toDoubleOrNull() ?: line.quantity
                 val p = parseRublesToKopecks(price) ?: line.unitPriceKopecks
-                onUpdate(line.copy(quantity = q, unitPriceKopecks = p, note = note.ifBlank { null }))
-            })
-            Text("  ·  Удалить", modifier = Modifier.clickable(onClick = onDelete))
-        }
+                val u = if (allowUnitChoice) unit else line.unit
+                onUpdate(line.copy(quantity = q, unitPriceKopecks = p, unit = u, note = note.ifBlank { null }))
+            },
+        )
     }
 }

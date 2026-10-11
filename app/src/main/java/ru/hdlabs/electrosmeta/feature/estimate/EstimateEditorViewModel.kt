@@ -107,6 +107,18 @@ class EstimateEditorViewModel(
         }
     }
 
+    fun addServices(services: List<ServiceEntity>) {
+        if (services.isEmpty()) return
+        viewModelScope.launch {
+            var sort = _state.value.lines.size
+            services.forEach { service ->
+                estimateRepository.addLineFromService(estimateId, service, sort)
+                sort++
+            }
+            reload()
+        }
+    }
+
     fun updateLine(line: EstimateLineEntity) {
         viewModelScope.launch {
             estimateRepository.updateLine(line)
@@ -137,6 +149,7 @@ class EstimateEditorViewModel(
         title: String,
         clientName: String,
         clientAddress: String,
+        workTitle: String,
         discountPercent: Double,
         discountAmountKopecks: Long,
         extraFeeKopecks: Long,
@@ -152,6 +165,7 @@ class EstimateEditorViewModel(
                     title = title,
                     clientName = clientName.ifBlank { null },
                     clientAddress = clientAddress.ifBlank { null },
+                    workTitle = workTitle.ifBlank { null },
                     discountPercent = discountPercent,
                     discountAmountKopecks = discountAmountKopecks,
                     extraFeeKopecks = extraFeeKopecks,

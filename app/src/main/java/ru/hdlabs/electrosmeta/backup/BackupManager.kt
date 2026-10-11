@@ -43,7 +43,7 @@ class BackupManager(
             estimates = estimateDao.getAllOnce().map {
                 BackupEstimate(
                     it.id, it.title, it.type.name, it.status.name,
-                    it.clientName, it.clientAddress,
+                    it.clientName, it.clientAddress, it.workTitle,
                     it.discountPercent, it.discountAmountKopecks, it.extraFeeKopecks,
                     it.complexityMultiplier, it.taxPercent, it.roundToWholeRubles,
                     it.comment, it.createdAtMillis, it.updatedAtMillis,
@@ -123,7 +123,7 @@ class BackupManager(
             estimateDao.insertEstimate(
                 EstimateEntity(
                     it.id, it.title, it.type.toEstimateType(), it.status.toEstimateStatus(),
-                    it.clientName, it.clientAddress,
+                    it.clientName, it.clientAddress, it.workTitle,
                     it.discountPercent, it.discountAmountKopecks, it.extraFeeKopecks,
                     it.complexityMultiplier, it.taxPercent, it.roundToWholeRubles,
                     it.comment, it.createdAtMillis, it.updatedAtMillis,
