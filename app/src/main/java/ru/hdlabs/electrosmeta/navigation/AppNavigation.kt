@@ -105,6 +105,10 @@ import ru.hdlabs.electrosmeta.domain.parseRublesToKopecks
 import ru.hdlabs.electrosmeta.domain.formatRubles
 import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorUiState
 import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorViewModel
+import ru.hdlabs.electrosmeta.feature.template.TemplateEditorUiState
+import ru.hdlabs.electrosmeta.feature.template.TemplateEditorViewModel
+import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
+import ru.hdlabs.electrosmeta.ui.components.reorderOnLongPressDrag
 import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
 import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 import ru.hdlabs.electrosmeta.update.UpdateInfo
@@ -131,9 +135,11 @@ object Routes {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val PRIVACY = "privacy"
-    const val NEW_TYPE = "new_type"
+    const val ESTIMATE_HUB = "estimate_hub"
+    const val TEMPLATE_EDIT = "template_edit/{id}"
     const val ESTIMATE = "estimate/{id}"
     fun estimate(id: Long) = "estimate/$id"
+    fun templateEdit(id: Long) = "template_edit/$id"
 }
 
 @Composable
@@ -141,7 +147,14 @@ fun AppNavHost() {
     val nav = rememberNavController()
     NavHost(navController = nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) { HomeScreen(nav) }
-        composable(Routes.NEW_TYPE) { NewEstimateTypeScreen(nav) }
+        composable(Routes.ESTIMATE_HUB) { EstimateHubScreen(nav) }
+        composable(
+            route = Routes.TEMPLATE_EDIT,
+            arguments = listOf(navArgument("id") { type = NavType.LongType }),
+        ) { entry ->
+            val id = entry.arguments?.getLong("id") ?: return@composable
+            TemplateEditScreen(nav, id)
+        }
         composable(Routes.HISTORY) { HistoryScreen(nav) }
         composable(Routes.PRICE) { PriceListScreen(nav) }
         composable(Routes.SETTINGS) { SettingsScreen(nav) }
@@ -216,11 +229,11 @@ private fun HomeScreen(nav: NavHostController) {
                     painter = painterResource(R.drawable.calc_home_logo),
                     contentDescription = "Calc by HDLabs",
                     modifier = Modifier
-                        .fillMaxWidth(0.78f)
-                        .padding(bottom = 20.dp),
+                        .fillMaxWidth(0.58f)
+                        .padding(bottom = 12.dp),
                     contentScale = ContentScale.Fit,
                 )
-                HdPrimaryButton("Новый расчёт") { nav.navigate(Routes.NEW_TYPE) }
+                HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
                 Spacer(Modifier.height(12.dp))
                 HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
                 Spacer(Modifier.height(12.dp))
@@ -239,32 +252,238 @@ private fun HomeScreen(nav: NavHostController) {
 }
 
 @Composable
-private fun NewEstimateTypeScreen(nav: NavHostController) {
+private fun EstimateHubScreen(nav: NavHostController) {
     val app = LocalContext.current.applicationContext as ElectrosmetaApplication
     val scope = rememberCoroutineScope()
-    HdScaffold(title = "Новый расчёт", onBack = { nav.popBackStack() }, scroll = false) {
+    val templates by app.container.templateRepository.observeTemplates()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    var orderedIds by remember(templates) { mutableStateOf(templates.map { it.id }) }
+    LaunchedEffect(templates) {
+        val ids = templates.map { it.id }
+        orderedIds = (orderedIds.filter { ids.contains(it) } + ids.filter { !orderedIds.contains(it) })
+    }
+    val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
+
+    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = true) {
         Column(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
         ) {
-            HdPrimaryButton("Основной расчёт") {
+            Spacer(Modifier.height(24.dp))
+            HdPrimaryButton("Новый расчёт") {
                 scope.launch {
                     val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
                     val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
-                    nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+                    nav.navigate(Routes.estimate(id))
                 }
             }
+            Text(
+                "Пустая смета. Типовые работы — шаблоны ниже.",
+                color = HdTextSecondary,
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
             Spacer(Modifier.height(12.dp))
-            HdSecondaryButton("Быстрый расчёт") {
+            orderedTemplates.forEachIndexed { index, template ->
+                HdSecondaryButton(
+                    text = template.name,
+                    modifier = Modifier.reorderOnLongPressDrag(
+                        enabled = true,
+                        onMoveUp = {
+                            if (index > 0) {
+                                val next = orderedIds.toMutableList()
+                                next[index - 1] = next[index].also { next[index] = next[index - 1] }
+                                orderedIds = next
+                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                            }
+                        },
+                        onMoveDown = {
+                            if (index < orderedIds.lastIndex) {
+                                val next = orderedIds.toMutableList()
+                                next[index + 1] = next[index].also { next[index] = next[index + 1] }
+                                orderedIds = next
+                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                            }
+                        },
+                    ),
+                    onClick = {
+                        scope.launch {
+                            val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                            val estimateId = app.container.templateRepository.createEstimateFromTemplate(template.id, tax)
+                            if (estimateId != null) {
+                                nav.navigate(Routes.estimate(estimateId))
+                            }
+                        }
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            HdSecondaryButton("Добавить шаблон") {
                 scope.launch {
-                    val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                    val id = app.container.estimateRepository.createDraft(EstimateType.QUICK, tax)
-                    nav.navigate(Routes.estimate(id)) { popUpTo(Routes.NEW_TYPE) { inclusive = true } }
+                    val id = app.container.templateRepository.createTemplate("Шаблон", EstimateType.MAIN)
+                    nav.navigate(Routes.templateEdit(id))
                 }
             }
+            Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
+    val context = LocalContext.current
+    val app = context.applicationContext as ElectrosmetaApplication
+    val vm: TemplateEditorViewModel = viewModel(
+        factory = TemplateEditorViewModel.Factory(
+            templateId,
+            app.container.templateRepository,
+            app.container.priceRepository,
+        ),
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+    val template = state.template
+    var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
+    var showServicePicker by remember { mutableStateOf(false) }
+    var expandedKeys by remember { mutableStateOf(setOf<Long>()) }
+    var categoryOrder by remember(state.categoryOrder) { mutableStateOf(state.categoryOrder) }
+    LaunchedEffect(state.categoryOrder) { categoryOrder = state.categoryOrder }
+
+    HdScaffold(title = "Шаблон", onBack = { nav.popBackStack() }) {
+        if (state.loading || template == null) {
+            Text("Загрузка…", color = HdTextSecondary)
+            return@HdScaffold
+        }
+        HdTextField(title, { title = it }, "Название шаблона")
+        HdSecondaryButton("Сохранить название") { vm.rename(title) }
+        Spacer(Modifier.height(12.dp))
+        Text("Категории и работы", color = HdTextPrimary)
+        val groups = buildTemplateLineGroups(state, categoryOrder)
+        groups.forEachIndexed { index, group ->
+            MainCategoryLinesSection(
+                group = group,
+                expanded = expandedKeys.contains(group.categoryKey),
+                highlighted = false,
+                onToggleExpand = {
+                    expandedKeys = if (expandedKeys.contains(group.categoryKey)) {
+                        expandedKeys - group.categoryKey
+                    } else {
+                        expandedKeys + group.categoryKey
+                    }
+                },
+                onUpdateLine = { line -> vm.updateLine(line.toTemplateLine(templateId, group.categoryKey)) },
+                onUpdateFailed = {},
+                onDeleteLine = { vm.deleteLine(it) },
+                headerModifier = Modifier.reorderOnLongPressDrag(
+                    enabled = true,
+                    onMoveUp = {
+                        val keys = categoryOrder.toMutableList()
+                        val pos = keys.indexOf(group.categoryKey)
+                        if (pos > 0) {
+                            keys[pos - 1] = keys[pos].also { keys[pos] = keys[pos - 1] }
+                            categoryOrder = keys
+                            vm.reorderCategories(keys)
+                        }
+                    },
+                    onMoveDown = {
+                        val keys = categoryOrder.toMutableList()
+                        val pos = keys.indexOf(group.categoryKey)
+                        if (pos >= 0 && pos < keys.lastIndex) {
+                            keys[pos + 1] = keys[pos].also { keys[pos] = keys[pos + 1] }
+                            categoryOrder = keys
+                            vm.reorderCategories(keys)
+                        }
+                    },
+                ),
+            )
+        }
+        HdSecondaryButton(if (showServicePicker) "Скрыть прайс" else "Добавить из прайса") {
+            showServicePicker = !showServicePicker
+        }
+        AnimatedVisibility(visible = showServicePicker) {
+            MainServicePickerPanel(
+                state = state.toPricePickerState(),
+                onAddServices = { services, key ->
+                    vm.addServices(services, key)
+                    expandedKeys = expandedKeys + key
+                    showServicePicker = false
+                },
+            )
+        }
+    }
+}
+
+private data class PricePickerState(
+    val categories: List<CategoryEntity>,
+    val servicesByCategory: Map<Long, List<ServiceEntity>>,
+    val favorites: List<ServiceEntity>,
+)
+
+private fun EstimateEditorUiState.toPricePickerState() = PricePickerState(
+    categories = categories,
+    servicesByCategory = servicesByCategory,
+    favorites = favorites,
+)
+
+private fun TemplateEditorUiState.toPricePickerState() = PricePickerState(
+    categories = categories,
+    servicesByCategory = servicesByCategory,
+    favorites = favorites,
+)
+
+private fun EstimateLineEntity.toTemplateLine(templateId: Long, categoryKey: Long): EstimateTemplateLineEntity =
+    EstimateTemplateLineEntity(
+        id = id,
+        templateId = templateId,
+        categoryKey = categoryKey,
+        catalogServiceId = catalogServiceId,
+        name = name,
+        unit = unit,
+        unitPriceKopecks = unitPriceKopecks,
+        quantity = quantity,
+        sortOrder = sortOrder,
+    )
+
+private fun buildTemplateLineGroups(
+    state: TemplateEditorUiState,
+    categoryOrder: List<Long>,
+): List<MainLineGroup> {
+    val serviceToCategory = mutableMapOf<Long, Long>()
+    state.servicesByCategory.forEach { (catId, services) ->
+        services.forEach { serviceToCategory[it.id] = catId }
+    }
+    state.favorites.forEach { serviceToCategory[it.id] = it.categoryId }
+    val grouped = state.lines.groupBy { it.categoryKey }
+    val keys = (categoryOrder.filter { grouped.containsKey(it) } +
+        grouped.keys.filter { !categoryOrder.contains(it) }).distinct()
+    return keys.map { key ->
+        val lines = grouped[key]?.sortedBy { it.sortOrder }?.map { templateLine ->
+            EstimateLineEntity(
+                id = templateLine.id,
+                estimateId = 0,
+                catalogServiceId = templateLine.catalogServiceId,
+                name = templateLine.name,
+                unit = templateLine.unit,
+                unitPriceKopecks = templateLine.unitPriceKopecks,
+                quantity = templateLine.quantity,
+                note = null,
+                sortOrder = templateLine.sortOrder,
+            )
+        } ?: emptyList()
+        MainLineGroup(
+            categoryKey = key,
+            title = categoryTitleFromPrice(state.categories, state.favorites, key),
+            lines = lines,
+        )
+    }
+}
+
+private fun categoryTitleFromPrice(
+    categories: List<CategoryEntity>,
+    favorites: List<ServiceEntity>,
+    categoryKey: Long,
+): String = when (categoryKey) {
+    FAVORITES_PICKER_CATEGORY_ID -> "Избранное"
+    UNCATEGORIZED_LINES_KEY -> "Прочее"
+    else -> categories.find { it.id == categoryKey }?.name ?: "Категория"
 }
 
 @Composable
@@ -686,10 +905,28 @@ private fun UpdateCheckSection() {
     val context = LocalContext.current
     val app = context.applicationContext as ElectrosmetaApplication
     val scope = rememberCoroutineScope()
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var checking by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf("") }
-    var showResult by remember { mutableStateOf(false) }
+    var dialogMessage by remember { mutableStateOf<String?>(null) }
+    var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    fun downloadUpdate(info: UpdateInfo) {
+        scope.launch {
+            checking = true
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    val target = File(context.cacheDir, info.apkFileName)
+                    ApkDownloadHelper.download(info.apkUrl, target)
+                    target
+                }
+                InstallHelper.promptInstall(context, file)
+            } catch (e: Exception) {
+                dialogMessage = e.message ?: "Не удалось скачать обновление"
+                pendingUpdate = null
+            } finally {
+                checking = false
+            }
+        }
+    }
 
     HdSecondaryButton(
         text = if (checking) "Проверка…" else "Проверить обновления",
@@ -697,90 +934,63 @@ private fun UpdateCheckSection() {
     ) {
         scope.launch {
             checking = true
-            showResult = false
-            updateInfo = null
-            statusMessage = "Проверяю обновления…"
-            val message = if (!ReleaseUpdateConfig.isConfigured()) {
-                "Репозиторий обновлений не настроен в сборке приложения"
-            } else {
-                try {
-                    val source = app.container.updateSource(
-                        ReleaseUpdateConfig.githubOwner,
-                        ReleaseUpdateConfig.githubRepo,
-                    )
-                    val info = withContext(Dispatchers.IO) {
-                        source.checkForUpdate(BuildConfig.VERSION_CODE)
-                    }
-                    updateInfo = info
-                    if (info == null) {
-                        "У вас актуальная версия ${BuildConfig.VERSION_NAME}"
-                    } else {
-                        "Доступно обновление ${info.versionName}"
-                    }
-                } catch (e: Exception) {
-                    updateInfo = null
-                    e.message ?: "Не удалось проверить обновления"
-                }
+            pendingUpdate = null
+            dialogMessage = null
+            if (!ReleaseUpdateConfig.isConfigured()) {
+                dialogMessage = "Репозиторий обновлений не настроен в сборке приложения"
+                checking = false
+                return@launch
             }
-            statusMessage = message
-            checking = false
-            showResult = true
+            try {
+                val source = app.container.updateSource(
+                    ReleaseUpdateConfig.githubOwner,
+                    ReleaseUpdateConfig.githubRepo,
+                )
+                val info = withContext(Dispatchers.IO) {
+                    source.checkForUpdate(BuildConfig.VERSION_CODE)
+                }
+                if (info == null) {
+                    dialogMessage = "У вас установлена последняя версия"
+                } else {
+                    pendingUpdate = info
+                }
+            } catch (e: Exception) {
+                dialogMessage = e.message ?: "Не удалось проверить обновления"
+            } finally {
+                checking = false
+            }
         }
     }
-    if (statusMessage.isNotBlank()) {
-        Text(
-            statusMessage,
-            color = HdOrange,
-            modifier = Modifier.padding(top = 8.dp),
+
+    pendingUpdate?.let { info ->
+        AlertDialog(
+            onDismissRequest = { pendingUpdate = null },
+            title = { Text("Доступно обновление") },
+            text = {
+                Text(
+                    "Версия ${info.versionName} уже на GitHub. Скачать и установить?",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Скачать") {
+                    pendingUpdate = null
+                    downloadUpdate(info)
+                }
+            },
+            dismissButton = {
+                HdSecondaryButton("Не скачивать") { pendingUpdate = null }
+            },
         )
     }
-    updateInfo?.let { info ->
-        Spacer(Modifier.height(8.dp))
-        HdPrimaryButton("Скачать ${info.versionName}") {
-            scope.launch {
-                statusMessage = "Скачивание ${info.versionName}…"
-                try {
-                    val file = withContext(Dispatchers.IO) {
-                        val target = File(context.cacheDir, info.apkFileName)
-                        ApkDownloadHelper.download(info.apkUrl, target)
-                        target
-                    }
-                    InstallHelper.promptInstall(context, file)
-                } catch (e: Exception) {
-                    statusMessage = e.message ?: "Не удалось скачать обновление"
-                    showResult = true
-                }
-            }
-        }
-    }
-    if (showResult) {
+
+    dialogMessage?.let { message ->
         AlertDialog(
-            onDismissRequest = { showResult = false },
+            onDismissRequest = { dialogMessage = null },
             title = { Text("Обновление") },
-            text = { Text(statusMessage, color = HdTextSecondary) },
+            text = { Text(message, color = HdTextSecondary) },
             confirmButton = {
-                val info = updateInfo
-                if (info != null) {
-                    HdPrimaryButton("Скачать ${info.versionName}") {
-                        showResult = false
-                        scope.launch {
-                            statusMessage = "Скачивание ${info.versionName}…"
-                            try {
-                                val file = withContext(Dispatchers.IO) {
-                                    val target = File(context.cacheDir, info.apkFileName)
-                                    ApkDownloadHelper.download(info.apkUrl, target)
-                                    target
-                                }
-                                InstallHelper.promptInstall(context, file)
-                            } catch (e: Exception) {
-                                statusMessage = e.message ?: "Не удалось скачать обновление"
-                                showResult = true
-                            }
-                        }
-                    }
-                } else {
-                    HdPrimaryButton("Понятно") { showResult = false }
-                }
+                HdPrimaryButton("Понятно") { dialogMessage = null }
             },
         )
     }
@@ -819,6 +1029,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var clientAddress by remember(estimate?.id) { mutableStateOf(estimate?.clientAddress ?: "") }
     var workTitle by remember(estimate?.id) { mutableStateOf(estimate?.workTitle ?: "") }
     var showServicePicker by remember { mutableStateOf(false) }
+    var showCustomLineForm by remember { mutableStateOf(false) }
     var expandedMainCategoryKeys by remember { mutableStateOf(setOf<Long>()) }
     var highlightedMainCategoryKey by remember { mutableStateOf<Long?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -889,150 +1100,170 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             Text("Загрузка…", color = HdTextSecondary)
             return@HdScaffold
         }
-        if (estimate?.type == EstimateType.MAIN) {
-            HdCard(Modifier.padding(bottom = 12.dp)) {
-                Text("Данные расчёта", color = HdTextPrimary)
-                Spacer(Modifier.height(8.dp))
-                HdTextField(title, { title = it }, "Название расчёта")
-                HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
-                HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
-                HdTextField(workTitle, { workTitle = it }, "Название работ")
-            }
-            val mainLineGroups = remember(state.lines, state.categories, state.servicesByCategory) {
-                buildMainLineGroups(state)
-            }
-            LaunchedEffect(state.lines.size, mainLineGroups.map { it.categoryKey }) {
-                if (state.lines.size > lastLineCount) {
-                    expandedMainCategoryKeys = expandedMainCategoryKeys + mainLineGroups.map { it.categoryKey }
-                    highlightedMainCategoryKey?.let { key ->
-                        expandedMainCategoryKeys = expandedMainCategoryKeys + key
-                    }
-                }
-                lastLineCount = state.lines.size
-            }
-            HdCard(Modifier.padding(bottom = 12.dp)) {
-                Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
-                mainLineGroups.forEach { group ->
-                    MainCategoryLinesSection(
-                        group = group,
-                        expanded = expandedMainCategoryKeys.contains(group.categoryKey),
-                        highlighted = highlightedMainCategoryKey == group.categoryKey,
-                        onToggleExpand = {
-                            expandedMainCategoryKeys = if (expandedMainCategoryKeys.contains(group.categoryKey)) {
-                                expandedMainCategoryKeys - group.categoryKey
-                            } else {
-                                expandedMainCategoryKeys + group.categoryKey
-                            }
-                        },
-                        onUpdateLine = { line ->
-                            vm.updateLine(line)
-                            scope.launch { showSnack("✓ Позиция обновлена") }
-                        },
-                        onUpdateFailed = {
-                            scope.launch { showSnack("Не удалось обновить — проверьте количество и цену") }
-                        },
-                        onDeleteLine = { vm.removeLine(it) },
-                    )
-                }
-                val addInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                val addPressed by addInteraction.collectIsPressedAsState()
-                val addScale by animateFloatAsState(
-                    if (addPressed) 0.97f else 1f,
-                    label = "addScale",
-                )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .scale(addScale)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(
-                            BorderStroke(
-                                1.5.dp,
-                                Brush.horizontalGradient(listOf(HdBlue, HdOrange)),
-                            ),
-                            RoundedCornerShape(14.dp),
-                        )
-                        .clickable(
-                            interactionSource = addInteraction,
-                            indication = ripple(color = HdOrange),
-                            onClick = { showServicePicker = !showServicePicker },
-                        )
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        if (showServicePicker) "Скрыть выбор из прайса" else "Добавить из прайса",
-                        color = HdTextPrimary,
-                    )
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = null,
-                        tint = HdOrange,
-                    )
-                }
-                AnimatedVisibility(
-                    visible = showServicePicker,
-                    enter = expandVertically(animationSpec = tween(320)) + fadeIn(animationSpec = tween(280)),
-                    exit = shrinkVertically(animationSpec = tween(260)) + fadeOut(animationSpec = tween(220)),
-                ) {
-                    MainServicePickerPanel(
-                        state = state,
-                        onAddServices = { services, pickerCategoryKey ->
-                            val keys = services.map { it.categoryId }.toSet()
-                            val highlight = keys.firstOrNull() ?: pickerCategoryKey
-                            expandedMainCategoryKeys = expandedMainCategoryKeys + keys + highlight
-                            highlightedMainCategoryKey = highlight
-                            showServicePicker = false
-                            vm.addServices(services)
-                            scope.launch {
-                                showSnack(
-                                    "✓ Добавлено в «${categoryTitle(state, highlight)}»: ${services.size} поз.",
-                                )
-                            }
-                        },
-                    )
-                }
-            }
-        } else {
-            HdCard(Modifier.padding(bottom = 12.dp)) {
-                Text("Данные расчёта", color = HdTextPrimary)
-                Spacer(Modifier.height(8.dp))
-                HdTextField(title, { title = it }, "Название расчёта")
-                HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
-                HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
-            }
-            HdCard(Modifier.padding(bottom = 12.dp)) {
-                Text("Новая позиция", color = HdTextPrimary)
-                Spacer(Modifier.height(8.dp))
-                HdTextField(quickName, { quickName = it }, "Название работы")
-                HdUnitChoiceRow(quickUnit, { quickUnit = it })
-                Spacer(Modifier.height(8.dp))
-                HdTextField(quickPrice, { quickPrice = it }, "Цена, ₽")
-                HdTextField(quickQty, { quickQty = it }, "Количество")
-                HdSecondaryButton("Добавить в смету") {
-                    vm.addQuickLine(quickName, quickUnit, quickPrice, quickQty)
-                    quickName = ""
-                }
-            }
+        HdCard(Modifier.padding(bottom = 12.dp)) {
+            Text("Данные расчёта", color = HdTextPrimary)
+            Spacer(Modifier.height(8.dp))
+            HdTextField(title, { title = it }, "Название расчёта")
+            HdTextField(clientName, { clientName = it }, "Имя клиента (необяз.)")
+            HdTextField(clientAddress, { clientAddress = it }, "Адрес объекта (необяз.)")
+            HdTextField(workTitle, { workTitle = it }, "Название работ")
         }
-
-        val isQuick = estimate?.type == EstimateType.QUICK
-        if (isQuick) {
-            Spacer(Modifier.height(12.dp))
-            Text("Позиции", color = HdTextPrimary)
-            state.lines.forEach { line ->
-                LineEditor(
-                    line,
-                    allowUnitChoice = true,
-                    onUpdate = { updated ->
-                        vm.updateLine(updated)
+        val mainLineGroups = remember(state.lines, state.categories, state.servicesByCategory) {
+            buildMainLineGroups(state)
+        }
+        LaunchedEffect(state.lines.size, mainLineGroups.map { it.categoryKey }) {
+            if (state.lines.size > lastLineCount) {
+                expandedMainCategoryKeys = expandedMainCategoryKeys + mainLineGroups.map { it.categoryKey }
+                highlightedMainCategoryKey?.let { key ->
+                    expandedMainCategoryKeys = expandedMainCategoryKeys + key
+                }
+            }
+            lastLineCount = state.lines.size
+        }
+        HdCard(Modifier.padding(bottom = 12.dp)) {
+            Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+            mainLineGroups.forEach { group ->
+                MainCategoryLinesSection(
+                    group = group,
+                    expanded = expandedMainCategoryKeys.contains(group.categoryKey),
+                    highlighted = highlightedMainCategoryKey == group.categoryKey,
+                    onToggleExpand = {
+                        expandedMainCategoryKeys = if (expandedMainCategoryKeys.contains(group.categoryKey)) {
+                            expandedMainCategoryKeys - group.categoryKey
+                        } else {
+                            expandedMainCategoryKeys + group.categoryKey
+                        }
+                    },
+                    onUpdateLine = { line ->
+                        vm.updateLine(line)
                         scope.launch { showSnack("✓ Позиция обновлена") }
                     },
                     onUpdateFailed = {
                         scope.launch { showSnack("Не удалось обновить — проверьте количество и цену") }
                     },
-                    onDelete = { vm.removeLine(line.id) },
+                    onDeleteLine = { vm.removeLine(it) },
+                )
+            }
+            val customInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val customPressed by customInteraction.collectIsPressedAsState()
+            val customScale by animateFloatAsState(
+                if (customPressed) 0.97f else 1f,
+                label = "customScale",
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+                    .scale(customScale)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(
+                        BorderStroke(1.5.dp, HdOrange.copy(alpha = 0.75f)),
+                        RoundedCornerShape(14.dp),
+                    )
+                    .clickable(
+                        interactionSource = customInteraction,
+                        indication = ripple(color = HdOrange),
+                        onClick = {
+                            showCustomLineForm = !showCustomLineForm
+                            if (showCustomLineForm) showServicePicker = false
+                        },
+                    )
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (showCustomLineForm) "Скрыть форму" else "Своя позиция",
+                    color = HdTextPrimary,
+                )
+                Icon(Icons.Default.Add, contentDescription = null, tint = HdOrange)
+            }
+            AnimatedVisibility(
+                visible = showCustomLineForm,
+                enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(260)),
+                exit = shrinkVertically(animationSpec = tween(240)) + fadeOut(animationSpec = tween(200)),
+            ) {
+                Column(Modifier.padding(bottom = 12.dp)) {
+                    HdTextField(quickName, { quickName = it }, "Название работы")
+                    HdUnitChoiceRow(quickUnit, { quickUnit = it })
+                    Spacer(Modifier.height(8.dp))
+                    HdTextField(quickPrice, { quickPrice = it }, "Цена, ₽")
+                    HdTextField(quickQty, { quickQty = it }, "Количество")
+                    HdSecondaryButton("Добавить в смету") {
+                        val priceOk = quickPrice.replace(',', '.').toDoubleOrNull() != null
+                        val qtyOk = quickQty.replace(',', '.').toDoubleOrNull() != null
+                        if (quickName.isBlank() || !priceOk || !qtyOk) {
+                            scope.launch { showSnack("Заполните название, цену и количество") }
+                        } else {
+                            vm.addQuickLine(quickName, quickUnit, quickPrice, quickQty)
+                            quickName = ""
+                            expandedMainCategoryKeys = expandedMainCategoryKeys + UNCATEGORIZED_LINES_KEY
+                            highlightedMainCategoryKey = UNCATEGORIZED_LINES_KEY
+                            scope.launch { showSnack("✓ Добавлено в «Прочее»") }
+                        }
+                    }
+                }
+            }
+            val addInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val addPressed by addInteraction.collectIsPressedAsState()
+            val addScale by animateFloatAsState(
+                if (addPressed) 0.97f else 1f,
+                label = "addScale",
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .scale(addScale)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(
+                        BorderStroke(
+                            1.5.dp,
+                            Brush.horizontalGradient(listOf(HdBlue, HdOrange)),
+                        ),
+                        RoundedCornerShape(14.dp),
+                    )
+                    .clickable(
+                        interactionSource = addInteraction,
+                        indication = ripple(color = HdOrange),
+                        onClick = {
+                            showServicePicker = !showServicePicker
+                            if (showServicePicker) showCustomLineForm = false
+                        },
+                    )
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (showServicePicker) "Скрыть выбор из прайса" else "Добавить из прайса",
+                    color = HdTextPrimary,
+                )
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = null,
+                    tint = HdOrange,
+                )
+            }
+            AnimatedVisibility(
+                visible = showServicePicker,
+                enter = expandVertically(animationSpec = tween(320)) + fadeIn(animationSpec = tween(280)),
+                exit = shrinkVertically(animationSpec = tween(260)) + fadeOut(animationSpec = tween(220)),
+            ) {
+                MainServicePickerPanel(
+                    state = state.toPricePickerState(),
+                    onAddServices = { services, pickerCategoryKey ->
+                        val keys = services.map { it.categoryId }.toSet()
+                        val highlight = keys.firstOrNull() ?: pickerCategoryKey
+                        expandedMainCategoryKeys = expandedMainCategoryKeys + keys + highlight
+                        highlightedMainCategoryKey = highlight
+                        showServicePicker = false
+                        vm.addServices(services)
+                        scope.launch {
+                            showSnack(
+                                "✓ Добавлено в «${categoryTitle(state, highlight)}»: ${services.size} поз.",
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -1205,6 +1436,7 @@ private fun MainCategoryLinesSection(
     onUpdateLine: (EstimateLineEntity) -> Unit,
     onUpdateFailed: () -> Unit,
     onDeleteLine: (Long) -> Unit,
+    headerModifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(12.dp)
     val headerBg = when {
@@ -1219,6 +1451,7 @@ private fun MainCategoryLinesSection(
         Row(
             Modifier
                 .fillMaxWidth()
+                .then(headerModifier)
                 .scale(headerScale)
                 .clip(shape)
                 .background(headerBg)
@@ -1259,7 +1492,7 @@ private fun MainCategoryLinesSection(
                 group.lines.forEach { line ->
                     LineEditor(
                         line = line,
-                        allowUnitChoice = false,
+                        allowUnitChoice = line.catalogServiceId == null,
                         onUpdate = onUpdateLine,
                         onUpdateFailed = onUpdateFailed,
                         onDelete = { onDeleteLine(line.id) },
@@ -1272,7 +1505,7 @@ private fun MainCategoryLinesSection(
 
 @Composable
 private fun MainServicePickerPanel(
-    state: EstimateEditorUiState,
+    state: PricePickerState,
     onAddServices: (List<ServiceEntity>, Long) -> Unit,
 ) {
     var step by remember { mutableStateOf(ServicePickerStep.Categories) }

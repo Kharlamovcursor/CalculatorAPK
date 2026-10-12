@@ -61,23 +61,25 @@ class EstimateEditorViewModel(
             _state.value = _state.value.copy(loading = true)
             val withLines = estimateRepository.getWithLines(estimateId)
             if (withLines != null) {
-                val subtotal = withLines.lines.sumOf {
+                estimateRepository.ensureMainType(withLines.estimate)
+                val fresh = estimateRepository.getWithLines(estimateId) ?: withLines
+                val subtotal = fresh.lines.sumOf {
                     EstimateCalculator.lineTotalKopecks(it.quantity, it.unitPriceKopecks)
                 }
                 val calc = EstimateCalculator.calculate(
                     CalculationInput(
                         linesSubtotalKopecks = subtotal,
-                        discountPercent = withLines.estimate.discountPercent,
-                        discountAmountKopecks = withLines.estimate.discountAmountKopecks,
-                        extraFeeKopecks = withLines.estimate.extraFeeKopecks,
-                        complexityMultiplier = withLines.estimate.complexityMultiplier,
-                        taxPercent = withLines.estimate.taxPercent,
-                        roundToWholeRubles = withLines.estimate.roundToWholeRubles,
+                        discountPercent = fresh.estimate.discountPercent,
+                        discountAmountKopecks = fresh.estimate.discountAmountKopecks,
+                        extraFeeKopecks = fresh.estimate.extraFeeKopecks,
+                        complexityMultiplier = fresh.estimate.complexityMultiplier,
+                        taxPercent = fresh.estimate.taxPercent,
+                        roundToWholeRubles = fresh.estimate.roundToWholeRubles,
                     ),
                 )
                 _state.value = _state.value.copy(
-                    estimate = withLines.estimate,
-                    lines = withLines.lines,
+                    estimate = fresh.estimate,
+                    lines = fresh.lines,
                     calculation = calc,
                     loading = false,
                 )

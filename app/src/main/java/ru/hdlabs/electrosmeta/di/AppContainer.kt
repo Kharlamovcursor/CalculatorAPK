@@ -9,6 +9,7 @@ import ru.hdlabs.electrosmeta.backup.BackupManager
 import ru.hdlabs.electrosmeta.data.local.AppDatabase
 import ru.hdlabs.electrosmeta.data.repository.EstimateRepository
 import ru.hdlabs.electrosmeta.data.repository.PriceRepository
+import ru.hdlabs.electrosmeta.data.repository.TemplateRepository
 import ru.hdlabs.electrosmeta.data.seed.DefaultPriceSeed
 import ru.hdlabs.electrosmeta.data.settings.SettingsRepository
 import ru.hdlabs.electrosmeta.pdf.PdfGenerator
@@ -24,6 +25,7 @@ class AppContainer(context: Context) {
     val settingsRepository = SettingsRepository(appContext)
     val priceRepository = PriceRepository(database.categoryDao(), database.serviceDao())
     val estimateRepository = EstimateRepository(database.estimateDao())
+    val templateRepository = TemplateRepository(database.templateDao(), estimateRepository)
 
     val backupManager = BackupManager(
         database.categoryDao(),

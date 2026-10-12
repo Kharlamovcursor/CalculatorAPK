@@ -22,7 +22,7 @@ class EstimateRepository(
     suspend fun createDraft(type: EstimateType, taxPercent: Double): Long {
         val now = System.currentTimeMillis()
         val title = when (type) {
-            EstimateType.MAIN -> "Основной расчёт"
+            EstimateType.MAIN -> "Новая смета"
             EstimateType.QUICK -> "Быстрый расчёт"
         }
         return estimateDao.insertEstimate(
@@ -50,6 +50,12 @@ class EstimateRepository(
         estimateDao.updateEstimate(estimate.copy(updatedAtMillis = System.currentTimeMillis()))
     }
 
+    suspend fun ensureMainType(estimate: EstimateEntity) {
+        if (estimate.type == EstimateType.QUICK) {
+            saveEstimate(estimate.copy(type = EstimateType.MAIN))
+        }
+    }
+
     suspend fun addLineFromService(estimateId: Long, service: ServiceEntity, sortOrder: Int) {
         estimateDao.insertLine(
             EstimateLineEntity(
@@ -66,8 +72,9 @@ class EstimateRepository(
         touchEstimate(estimateId)
     }
 
-    suspend fun addCustomLine(
+    suspend fun addLineSnapshot(
         estimateId: Long,
+        catalogServiceId: Long?,
         name: String,
         unit: String,
         priceKopecks: Long,
@@ -77,7 +84,7 @@ class EstimateRepository(
         estimateDao.insertLine(
             EstimateLineEntity(
                 estimateId = estimateId,
-                catalogServiceId = null,
+                catalogServiceId = catalogServiceId,
                 name = name,
                 unit = unit,
                 unitPriceKopecks = priceKopecks,
@@ -87,6 +94,17 @@ class EstimateRepository(
             ),
         )
         touchEstimate(estimateId)
+    }
+
+    suspend fun addCustomLine(
+        estimateId: Long,
+        name: String,
+        unit: String,
+        priceKopecks: Long,
+        quantity: Double,
+        sortOrder: Int,
+    ) {
+        addLineSnapshot(estimateId, null, name, unit, priceKopecks, quantity, sortOrder)
     }
 
     suspend fun updateLine(line: EstimateLineEntity) {
