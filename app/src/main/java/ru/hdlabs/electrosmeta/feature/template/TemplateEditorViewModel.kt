@@ -73,9 +73,11 @@ class TemplateEditorViewModel(
     }
 
     fun rename(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
         viewModelScope.launch {
-            templateRepository.renameTemplate(templateId, name)
-            reload()
+            templateRepository.renameTemplate(templateId, trimmed)
+            refreshFromDatabase()
         }
     }
 
@@ -105,6 +107,13 @@ class TemplateEditorViewModel(
         viewModelScope.launch {
             templateRepository.reorderCategories(templateId, orderedKeys)
             reload()
+        }
+    }
+
+    fun deleteTemplate(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            templateRepository.deleteTemplate(templateId)
+            onDeleted()
         }
     }
 

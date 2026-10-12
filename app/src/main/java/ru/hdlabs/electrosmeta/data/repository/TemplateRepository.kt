@@ -20,13 +20,23 @@ class TemplateRepository(
 
     suspend fun createTemplate(name: String, type: EstimateType): Long {
         val sortOrder = templateDao.nextTemplateSortOrder()
+        val displayName = name.ifBlank { defaultNewTemplateName() }
         return templateDao.insertTemplate(
             EstimateTemplateEntity(
-                name = name,
+                name = displayName,
                 sortOrder = sortOrder,
                 type = type,
             ),
         )
+    }
+
+    private suspend fun defaultNewTemplateName(): String {
+        val existing = templateDao.getAllTemplatesOnce()
+        val base = "Шаблон"
+        if (existing.none { it.name == base }) return base
+        var n = 2
+        while (existing.any { it.name == "$base $n" }) n++
+        return "$base $n"
     }
 
     suspend fun renameTemplate(id: Long, name: String) {
@@ -34,7 +44,7 @@ class TemplateRepository(
         templateDao.updateTemplate(template.copy(name = name))
     }
 
-    suspend fun deleteTemplate(id: Long) = templateDao.deleteTemplate(id)
+    suspend fun deleteTemplate(id: Long) = templateDao.deleteTemplateWithContent(id)
 
     suspend fun reorderTemplates(orderedIds: List<Long>) {
         orderedIds.forEachIndexed { index, id ->

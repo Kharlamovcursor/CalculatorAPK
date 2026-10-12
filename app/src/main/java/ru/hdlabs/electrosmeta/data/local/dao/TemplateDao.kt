@@ -62,8 +62,21 @@ interface TemplateDao {
     @Query("DELETE FROM estimate_template_lines WHERE id = :lineId")
     suspend fun deleteLine(lineId: Long)
 
+    @Query("DELETE FROM estimate_template_lines WHERE templateId = :templateId")
+    suspend fun deleteLinesForTemplate(templateId: Long)
+
+    @Query("DELETE FROM estimate_template_categories WHERE templateId = :templateId")
+    suspend fun deleteCategoriesForTemplate(templateId: Long)
+
     @Query("DELETE FROM estimate_templates WHERE id = :id")
     suspend fun deleteTemplate(id: Long)
+
+    @Transaction
+    suspend fun deleteTemplateWithContent(id: Long) {
+        deleteLinesForTemplate(id)
+        deleteCategoriesForTemplate(id)
+        deleteTemplate(id)
+    }
 
     @Query("SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM estimate_templates")
     suspend fun nextTemplateSortOrder(): Int

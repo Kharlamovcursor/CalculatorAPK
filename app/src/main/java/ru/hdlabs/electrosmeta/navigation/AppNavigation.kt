@@ -107,6 +107,7 @@ import ru.hdlabs.electrosmeta.ElectrosmetaApplication
 import ru.hdlabs.electrosmeta.data.local.EstimateType
 import ru.hdlabs.electrosmeta.data.local.entities.CategoryEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateEntity
+import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.data.settings.AppSettings
@@ -272,12 +273,13 @@ private fun EstimateHubScreen(nav: NavHostController) {
     val scope = rememberCoroutineScope()
     val templates by app.container.templateRepository.observeTemplates()
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    var orderedIds by remember(templates) { mutableStateOf(templates.map { it.id }) }
+    var orderedIds by remember { mutableStateOf<List<Long>>(emptyList()) }
     LaunchedEffect(templates) {
         val ids = templates.map { it.id }
         orderedIds = (orderedIds.filter { ids.contains(it) } + ids.filter { !orderedIds.contains(it) })
     }
     val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
+    var deleteTemplateTarget by remember { mutableStateOf<EstimateTemplateEntity?>(null) }
 
     HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = false) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -307,30 +309,19 @@ private fun EstimateHubScreen(nav: NavHostController) {
                 )
                 if (orderedTemplates.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Удерживайте строку и тяните вверх/вниз для порядка.",
+                        color = HdTextSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                    )
                 }
                 orderedTemplates.forEachIndexed { index, template ->
-                    HdSecondaryButton(
-                        text = template.name,
-                        modifier = Modifier.reorderOnLongPressDrag(
-                            enabled = true,
-                            onMoveUp = {
-                                if (index > 0) {
-                                    val next = orderedIds.toMutableList()
-                                    next[index - 1] = next[index].also { next[index] = next[index - 1] }
-                                    orderedIds = next
-                                    scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                                }
-                            },
-                            onMoveDown = {
-                                if (index < orderedIds.lastIndex) {
-                                    val next = orderedIds.toMutableList()
-                                    next[index + 1] = next[index].also { next[index] = next[index + 1] }
-                                    orderedIds = next
-                                    scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                                }
-                            },
-                        ),
-                        onClick = {
+                    TemplateHubRow(
+                        template = template,
+                        onOpenEstimate = {
                             scope.launch {
                                 val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
                                 val estimateId = app.container.templateRepository.createEstimateFromTemplate(template.id, tax)
@@ -339,17 +330,57 @@ private fun EstimateHubScreen(nav: NavHostController) {
                                 }
                             }
                         },
+                        onEdit = { nav.navigate(Routes.templateEdit(template.id)) },
+                        onDelete = { deleteTemplateTarget = template },
+                        onMoveUp = {
+                            if (index > 0) {
+                                val next = orderedIds.toMutableList()
+                                next[index - 1] = next[index].also { next[index] = next[index - 1] }
+                                orderedIds = next
+                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                            }
+                        },
+                        onMoveDown = {
+                            if (index < orderedIds.lastIndex) {
+                                val next = orderedIds.toMutableList()
+                                next[index + 1] = next[index].also { next[index] = next[index + 1] }
+                                orderedIds = next
+                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                            }
+                        },
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                 }
                 HdSecondaryButton("Добавить шаблон") {
                     scope.launch {
-                        val id = app.container.templateRepository.createTemplate("Шаблон", EstimateType.MAIN)
+                        val id = app.container.templateRepository.createTemplate("", EstimateType.MAIN)
                         nav.navigate(Routes.templateEdit(id))
                     }
                 }
             }
         }
+    }
+
+    deleteTemplateTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTemplateTarget = null },
+            title = { Text("Удалить шаблон?") },
+            text = {
+                Text(
+                    "«${target.name}» и все его работы будут удалены без восстановления.",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Удалить") {
+                    scope.launch {
+                        app.container.templateRepository.deleteTemplate(target.id)
+                        deleteTemplateTarget = null
+                    }
+                }
+            },
+            dismissButton = { HdSecondaryButton("Отмена") { deleteTemplateTarget = null } },
+        )
     }
 }
 
@@ -367,7 +398,9 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val template = state.template
+    val snackbarHostState = remember { SnackbarHostState() }
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
+    var showDeleteTemplateConfirm by remember { mutableStateOf(false) }
     var showServicePicker by remember { mutableStateOf(false) }
     var showCustomLineForm by remember { mutableStateOf(false) }
     var customName by remember { mutableStateOf("") }
@@ -377,15 +410,28 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     var expandedKeys by remember { mutableStateOf(setOf<Long>()) }
     var categoryOrder by remember(state.categoryOrder) { mutableStateOf(state.categoryOrder) }
     LaunchedEffect(state.categoryOrder) { categoryOrder = state.categoryOrder }
+    LaunchedEffect(title, template?.id) {
+        if (state.loading || template == null) return@LaunchedEffect
+        delay(800)
+        val trimmed = title.trim()
+        if (trimmed.isEmpty() || trimmed == template.name) return@LaunchedEffect
+        vm.rename(trimmed)
+        snackbarHostState.showSnackbar("Название сохранено", duration = SnackbarDuration.Short)
+    }
 
-    HdScaffold(title = "Шаблон", onBack = { nav.popBackStack() }) {
+    Box(Modifier.fillMaxSize()) {
+    HdScaffold(title = template?.name ?: "Шаблон", onBack = { nav.popBackStack() }) {
         if (state.loading || template == null) {
             Text("Загрузка…", color = HdTextSecondary)
             return@HdScaffold
         }
         HdTextField(title, { title = it }, "Название шаблона")
-        HdSecondaryButton("Сохранить название") { vm.rename(title) }
-        Spacer(Modifier.height(12.dp))
+        Text(
+            "Название сохраняется автоматически",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        Spacer(Modifier.height(4.dp))
         Text("Категории и работы", color = HdTextPrimary)
         val groups = buildTemplateLineGroups(state, categoryOrder)
         groups.forEachIndexed { index, group ->
@@ -461,6 +507,96 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     showServicePicker = false
                 },
             )
+        }
+        Spacer(Modifier.height(16.dp))
+        HdSecondaryButton("Удалить шаблон") { showDeleteTemplateConfirm = true }
+    }
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(16.dp),
+        snackbar = { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = HdPanelElevated,
+                contentColor = HdTextPrimary,
+                actionColor = HdOrange,
+            )
+        },
+    )
+    }
+
+    if (showDeleteTemplateConfirm && template != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteTemplateConfirm = false },
+            title = { Text("Удалить шаблон?") },
+            text = {
+                Text(
+                    "«${template.name}» и все работы в нём будут удалены.",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Удалить") {
+                    vm.deleteTemplate { nav.popBackStack() }
+                    showDeleteTemplateConfirm = false
+                }
+            },
+            dismissButton = { HdSecondaryButton("Отмена") { showDeleteTemplateConfirm = false } },
+        )
+    }
+}
+
+@Composable
+private fun TemplateHubRow(
+    template: EstimateTemplateEntity,
+    onOpenEstimate: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .reorderOnLongPressDrag(
+                enabled = true,
+                onMoveUp = onMoveUp,
+                onMoveDown = onMoveDown,
+            )
+            .clip(shape)
+            .background(HdPanelElevated.copy(alpha = 0.65f))
+            .border(1.dp, HdBlue.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            Modifier
+                .weight(1f)
+                .clickable(onClick = onOpenEstimate),
+        ) {
+            Text(template.name, color = HdTextPrimary)
+            Text("Нажмите — новый расчёт из шаблона", color = HdTextSecondary)
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            IconButton(onClick = onMoveUp) {
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Выше", tint = HdTextSecondary)
+            }
+            IconButton(onClick = onMoveDown) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Ниже", tint = HdTextSecondary)
+            }
+        }
+        Text(
+            "Изменить",
+            color = HdOrange,
+            modifier = Modifier
+                .padding(horizontal = 4.dp)
+                .clickable(onClick = onEdit),
+        )
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Удалить шаблон", tint = HdTextSecondary)
         }
     }
 }
