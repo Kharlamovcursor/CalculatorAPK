@@ -63,9 +63,10 @@ class GitHubUpdateSource(
             )
         }
         val release = json.decodeFromString<GitHubRelease>(text)
-        val apk = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+        val apk = release.assets.firstOrNull { it.name.equals("app-release.apk", ignoreCase = true) }
+            ?: release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
             ?: throw IllegalStateException("В последнем Release нет файла .apk")
-        val remoteCode = parseVersionCode(release.tagName)
+        val remoteCode = ReleaseVersionParser.parseVersionCode(release.tagName, BuildConfig.VERSION_CODE)
         if (remoteCode <= currentVersionCode) return null
         return UpdateInfo(
             versionName = displayVersion(release.tagName, remoteCode),
@@ -81,32 +82,37 @@ class GitHubUpdateSource(
         return tag
     }
 
-    private fun parseVersionCode(tag: String): Int {
-        val stripped = tag.trim().removePrefix("v").removePrefix("V")
-        stripped.toIntOrNull()?.let { return it }
-        val digits = tag.filter { it.isDigit() || it == '.' }
-        val parts = digits.split('.').filter { it.isNotEmpty() }
-        if (parts.isEmpty()) return BuildConfig.VERSION_CODE
-        if (parts.size >= 3) {
-            val major = parts[0].toIntOrNull() ?: 0
-            val minor = parts[1].toIntOrNull() ?: 0
-            val patch = parts[2].toIntOrNull() ?: 0
-            return major * 10000 + minor * 100 + patch
-        }
-        return parts.take(3).fold(0) { acc, part ->
-            acc * 1000 + (part.toIntOrNull()?.coerceIn(0, 999) ?: 0)
-        }
-    }
 }
 
 object ApkDownloadHelper {
+    private val trustedHosts = setOf("github.com", "objects.githubusercontent.com")
+
     fun download(url: String, target: File) {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        val parsed = URL(url)
+        val host = parsed.host.lowercase()
+        require(trustedHosts.contains(host) || host.endsWith(".githubusercontent.com")) {
+            "Недоверенный источник обновления: $host"
+        }
+        require(parsed.protocol.equals("https", ignoreCase = true)) { "Обновление доступно только по HTTPS" }
+        val connection = (parsed.openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 120_000
+            instanceFollowRedirects = true
         }
         connection.inputStream.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
+        }
+        verifyApkFile(target)
+    }
+
+    fun verifyApkFile(file: File) {
+        require(file.exists() && file.length() > 10_000) { "Загруженный файл повреждён или пуст" }
+        file.inputStream().use { input ->
+            val header = ByteArray(4)
+            val read = input.read(header)
+            require(read == 4 && header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()) {
+                "Файл не является корректным APK"
+            }
         }
     }
 

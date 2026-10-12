@@ -88,6 +88,7 @@ data class BackupLine(
     val id: Long,
     val estimateId: Long,
     val catalogServiceId: Long?,
+    val categoryKey: Long? = null,
     val name: String,
     val unit: String,
     val unitPriceKopecks: Long,

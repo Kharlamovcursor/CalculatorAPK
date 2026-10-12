@@ -29,7 +29,7 @@ import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
         EstimateTemplateCategoryEntity::class,
         EstimateTemplateLineEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -93,6 +93,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE estimate_lines ADD COLUMN categoryKey INTEGER")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -103,7 +109,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "electrosmeta.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { instance = it }
             }
         }

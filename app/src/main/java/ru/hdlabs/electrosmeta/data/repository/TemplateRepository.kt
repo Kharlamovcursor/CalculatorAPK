@@ -8,6 +8,7 @@ import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateCategoryEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
+import ru.hdlabs.electrosmeta.domain.EstimateLineCategoryKeys
 
 class TemplateRepository(
     private val templateDao: TemplateDao,
@@ -94,6 +95,30 @@ class TemplateRepository(
         templateDao.deleteLine(lineId)
     }
 
+    suspend fun addCustomLine(
+        templateId: Long,
+        name: String,
+        unit: String,
+        priceKopecks: Long,
+        quantity: Double,
+    ) {
+        val key = EstimateLineCategoryKeys.UNCATEGORIZED
+        ensureCategory(templateId, key)
+        val sort = templateDao.getLines(templateId).maxOfOrNull { it.sortOrder }?.plus(1) ?: 0
+        templateDao.insertLine(
+            EstimateTemplateLineEntity(
+                templateId = templateId,
+                categoryKey = key,
+                catalogServiceId = null,
+                name = name,
+                unit = unit,
+                unitPriceKopecks = priceKopecks,
+                quantity = quantity,
+                sortOrder = sort,
+            ),
+        )
+    }
+
     suspend fun createEstimateFromTemplate(templateId: Long, taxPercent: Double): Long? {
         val content = templateDao.getWithContent(templateId) ?: return null
         val estimateId = estimateRepository.createDraft(EstimateType.MAIN, taxPercent)
@@ -110,6 +135,7 @@ class TemplateRepository(
                 priceKopecks = line.unitPriceKopecks,
                 quantity = line.quantity,
                 sortOrder = index,
+                categoryKey = line.categoryKey,
             )
         }
         return estimateId

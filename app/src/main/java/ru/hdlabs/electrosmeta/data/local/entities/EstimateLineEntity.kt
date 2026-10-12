@@ -21,6 +21,8 @@ data class EstimateLineEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val estimateId: Long,
     val catalogServiceId: Long?,
+    /** Категория прайса на момент добавления; null — старые строки, группировка по снимку. */
+    val categoryKey: Long? = null,
     val name: String,
     val unit: String,
     val unitPriceKopecks: Long,

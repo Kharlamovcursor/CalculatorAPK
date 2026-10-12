@@ -104,6 +104,22 @@ class TemplateEditorViewModel(
         }
     }
 
+    fun addCustomLine(name: String, unit: String, priceRub: String, qty: String) {
+        val price = priceRub.replace(',', '.').toDoubleOrNull()?.times(100)?.toLong() ?: return
+        val quantity = qty.replace(',', '.').toDoubleOrNull() ?: return
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            templateRepository.addCustomLine(
+                templateId,
+                name,
+                unit.ifBlank { "шт." },
+                price,
+                quantity,
+            )
+            reload()
+        }
+    }
+
     class Factory(
         private val templateId: Long,
         private val templateRepository: TemplateRepository,

@@ -38,4 +38,18 @@ class EstimateCalculatorTest {
     fun lineTotal() {
         assertEquals(2_750L, EstimateCalculator.lineTotalKopecks(2.5, 1_100))
     }
+
+    @Test
+    fun percentAndFixedDiscountCombine() {
+        val result = EstimateCalculator.calculate(
+            CalculationInput(
+                linesSubtotalKopecks = 10_000,
+                discountPercent = 10.0,
+                discountAmountKopecks = 500,
+                roundToWholeRubles = false,
+            ),
+        )
+        assertEquals(1_500L, result.discountKopecks)
+        assertEquals(8_500L, result.afterDiscountKopecks)
+    }
 }

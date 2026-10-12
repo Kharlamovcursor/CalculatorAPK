@@ -32,12 +32,14 @@ import ru.hdlabs.electrosmeta.R
 import ru.hdlabs.electrosmeta.backup.BackupSummary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -77,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.hdlabs.electrosmeta.ui.theme.HdBlue
 import ru.hdlabs.electrosmeta.ui.theme.HdOrange
@@ -101,6 +104,7 @@ import ru.hdlabs.electrosmeta.data.local.entities.EstimateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.data.settings.AppSettings
+import ru.hdlabs.electrosmeta.domain.EstimateLineCategoryKeys
 import ru.hdlabs.electrosmeta.domain.parseRublesToKopecks
 import ru.hdlabs.electrosmeta.domain.formatRubles
 import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorUiState
@@ -264,66 +268,75 @@ private fun EstimateHubScreen(nav: NavHostController) {
     }
     val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
 
-    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = true) {
-        Column(
-            Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(24.dp))
-            HdPrimaryButton("Новый расчёт") {
-                scope.launch {
-                    val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                    val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
-                    nav.navigate(Routes.estimate(id))
+    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = false) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = maxHeight)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                HdPrimaryButton("Новый расчёт") {
+                    scope.launch {
+                        val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                        val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
+                        nav.navigate(Routes.estimate(id))
+                    }
                 }
-            }
-            Text(
-                "Пустая смета. Типовые работы — шаблоны ниже.",
-                color = HdTextSecondary,
-                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-            orderedTemplates.forEachIndexed { index, template ->
-                HdSecondaryButton(
-                    text = template.name,
-                    modifier = Modifier.reorderOnLongPressDrag(
-                        enabled = true,
-                        onMoveUp = {
-                            if (index > 0) {
-                                val next = orderedIds.toMutableList()
-                                next[index - 1] = next[index].also { next[index] = next[index - 1] }
-                                orderedIds = next
-                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                            }
-                        },
-                        onMoveDown = {
-                            if (index < orderedIds.lastIndex) {
-                                val next = orderedIds.toMutableList()
-                                next[index + 1] = next[index].also { next[index] = next[index + 1] }
-                                orderedIds = next
-                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                            }
-                        },
-                    ),
-                    onClick = {
-                        scope.launch {
-                            val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                            val estimateId = app.container.templateRepository.createEstimateFromTemplate(template.id, tax)
-                            if (estimateId != null) {
-                                nav.navigate(Routes.estimate(estimateId))
-                            }
-                        }
-                    },
+                Text(
+                    "Пустая смета. Типовые работы — шаблоны ниже.",
+                    color = HdTextSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
                 )
-                Spacer(Modifier.height(12.dp))
-            }
-            HdSecondaryButton("Добавить шаблон") {
-                scope.launch {
-                    val id = app.container.templateRepository.createTemplate("Шаблон", EstimateType.MAIN)
-                    nav.navigate(Routes.templateEdit(id))
+                if (orderedTemplates.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                }
+                orderedTemplates.forEachIndexed { index, template ->
+                    HdSecondaryButton(
+                        text = template.name,
+                        modifier = Modifier.reorderOnLongPressDrag(
+                            enabled = true,
+                            onMoveUp = {
+                                if (index > 0) {
+                                    val next = orderedIds.toMutableList()
+                                    next[index - 1] = next[index].also { next[index] = next[index - 1] }
+                                    orderedIds = next
+                                    scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                                }
+                            },
+                            onMoveDown = {
+                                if (index < orderedIds.lastIndex) {
+                                    val next = orderedIds.toMutableList()
+                                    next[index + 1] = next[index].also { next[index] = next[index + 1] }
+                                    orderedIds = next
+                                    scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                                }
+                            },
+                        ),
+                        onClick = {
+                            scope.launch {
+                                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
+                                val estimateId = app.container.templateRepository.createEstimateFromTemplate(template.id, tax)
+                                if (estimateId != null) {
+                                    nav.navigate(Routes.estimate(estimateId))
+                                }
+                            }
+                        },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                HdSecondaryButton("Добавить шаблон") {
+                    scope.launch {
+                        val id = app.container.templateRepository.createTemplate("Шаблон", EstimateType.MAIN)
+                        nav.navigate(Routes.templateEdit(id))
+                    }
                 }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -343,6 +356,11 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     val template = state.template
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
     var showServicePicker by remember { mutableStateOf(false) }
+    var showCustomLineForm by remember { mutableStateOf(false) }
+    var customName by remember { mutableStateOf("") }
+    var customUnit by remember { mutableStateOf("шт.") }
+    var customPrice by remember { mutableStateOf("") }
+    var customQty by remember { mutableStateOf("1") }
     var expandedKeys by remember { mutableStateOf(setOf<Long>()) }
     var categoryOrder by remember(state.categoryOrder) { mutableStateOf(state.categoryOrder) }
     LaunchedEffect(state.categoryOrder) { categoryOrder = state.categoryOrder }
@@ -395,8 +413,27 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                 ),
             )
         }
+        HdSecondaryButton(if (showCustomLineForm) "Скрыть форму" else "Своя позиция") {
+            showCustomLineForm = !showCustomLineForm
+            if (showCustomLineForm) showServicePicker = false
+        }
+        AnimatedVisibility(visible = showCustomLineForm) {
+            Column(Modifier.padding(vertical = 8.dp)) {
+                HdTextField(customName, { customName = it }, "Название работы")
+                HdUnitChoiceRow(customUnit, { customUnit = it })
+                Spacer(Modifier.height(8.dp))
+                HdTextField(customPrice, { customPrice = it }, "Цена, ₽")
+                HdTextField(customQty, { customQty = it }, "Количество")
+                HdSecondaryButton("Добавить в шаблон") {
+                    vm.addCustomLine(customName, customUnit, customPrice, customQty)
+                    customName = ""
+                    expandedKeys = expandedKeys + EstimateLineCategoryKeys.UNCATEGORIZED
+                }
+            }
+        }
         HdSecondaryButton(if (showServicePicker) "Скрыть прайс" else "Добавить из прайса") {
             showServicePicker = !showServicePicker
+            if (showServicePicker) showCustomLineForm = false
         }
         AnimatedVisibility(visible = showServicePicker) {
             MainServicePickerPanel(
@@ -460,6 +497,7 @@ private fun buildTemplateLineGroups(
                 id = templateLine.id,
                 estimateId = 0,
                 catalogServiceId = templateLine.catalogServiceId,
+                categoryKey = templateLine.categoryKey,
                 name = templateLine.name,
                 unit = templateLine.unit,
                 unitPriceKopecks = templateLine.unitPriceKopecks,
@@ -482,7 +520,8 @@ private fun categoryTitleFromPrice(
     categoryKey: Long,
 ): String = when (categoryKey) {
     FAVORITES_PICKER_CATEGORY_ID -> "Избранное"
-    UNCATEGORIZED_LINES_KEY -> "Прочее"
+    EstimateLineCategoryKeys.UNCATEGORIZED -> "Прочее"
+    EstimateLineCategoryKeys.ORPHAN_CATALOG -> "Снято с прайса"
     else -> categories.find { it.id == categoryKey }?.name ?: "Категория"
 }
 
@@ -624,6 +663,13 @@ private fun PriceListScreen(nav: NavHostController) {
             val serviceCount = services.count { it.categoryId == cat.id }
             Spacer(Modifier.height(12.dp))
             val catShape = RoundedCornerShape(14.dp)
+            val toggleExpand = {
+                expandedCategoryIds = if (expanded) {
+                    expandedCategoryIds - cat.id
+                } else {
+                    expandedCategoryIds + cat.id
+                }
+            }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -649,35 +695,31 @@ private fun PriceListScreen(nav: NavHostController) {
                     .clip(catShape)
                     .background(HdPanelElevated.copy(alpha = 0.65f))
                     .border(1.dp, HdTextSecondary.copy(alpha = 0.35f), catShape)
-                    .clickable {
-                        expandedCategoryIds = if (expanded) {
-                            expandedCategoryIds - cat.id
-                        } else {
-                            expandedCategoryIds + cat.id
-                        }
-                    }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clickable(onClick = toggleExpand),
+                ) {
                     Text(cat.name, color = HdTextPrimary)
                     Text("$serviceCount поз.", color = HdTextSecondary)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Изменить",
-                        color = HdOrange,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .clickable { editingCategory = cat },
-                    )
-                    Icon(
-                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Свернуть" else "Развернуть",
-                        tint = HdOrange,
-                    )
-                }
+                Text(
+                    "Изменить",
+                    color = HdOrange,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clickable { editingCategory = cat },
+                )
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                    tint = HdOrange,
+                    modifier = Modifier.clickable(onClick = toggleExpand),
+                )
             }
             AnimatedVisibility(
                 visible = expanded,
@@ -776,7 +818,8 @@ private fun PriceListScreen(nav: NavHostController) {
             text = {
                 Text(
                     "Текущий активный прайс будет архивирован и заменён стартовым списком услуг. " +
-                        "Уже созданные расчёты не изменятся.",
+                        "Идентификаторы услуг изменятся — ссылки из шаблонов на старый прайс могут перестать совпадать. " +
+                        "Уже созданные сметы (снимки цен в строках) не пересчитаются.",
                     color = HdTextSecondary,
                 )
             },
@@ -879,8 +922,13 @@ private fun SettingsScreen(nav: NavHostController) {
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val bytes = app.container.backupManager.exportEncrypted(backupPassword.toCharArray())
-            app.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            try {
+                val bytes = app.container.backupManager.exportEncrypted(backupPassword.toCharArray())
+                app.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                importMessage = "Резервная копия сохранена"
+            } catch (e: Exception) {
+                importMessage = e.message ?: "Не удалось экспортировать"
+            }
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -952,7 +1000,7 @@ private fun SettingsScreen(nav: NavHostController) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        HdTextField(backupPassword, { backupPassword = it }, "Пароль резервной копии")
+        HdTextField(backupPassword, { backupPassword = it }, "Пароль резервной копии (от 6 символов)")
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Экспорт резервной копии") {
             exportLauncher.launch("hdlabs-electrosmeta-backup.hdeb")
@@ -965,7 +1013,7 @@ private fun SettingsScreen(nav: NavHostController) {
             Text(importMessage, color = HdTextSecondary, modifier = Modifier.padding(top = 8.dp))
         }
         Spacer(Modifier.height(16.dp))
-        HdSecondaryButton("Удалить все расчёты") { confirmClear = true }
+        HdSecondaryButton("Удалить все сметы из истории") { confirmClear = true }
         Spacer(Modifier.height(24.dp))
         UpdateCheckSection()
     }
@@ -977,7 +1025,8 @@ private fun SettingsScreen(nav: NavHostController) {
             text = {
                 Text(
                     "Будет заменено: категорий ${preview.categories}, услуг ${preview.services}, " +
-                        "шаблонов ${preview.templates}, расчётов ${preview.estimates}.",
+                        "шаблонов ${preview.templates}, расчётов ${preview.estimates}. " +
+                        "Старые копии без шаблонов восстановят пустой список шаблонов.",
                     color = HdTextSecondary,
                 )
             },
@@ -1005,7 +1054,7 @@ private fun SettingsScreen(nav: NavHostController) {
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("Удалить все расчёты?") },
+            title = { Text("Удалить все сметы?") },
             text = { Text("Прайс и настройки сохранятся.", color = HdTextSecondary) },
             confirmButton = {
                 HdPrimaryButton("Удалить") {
@@ -1235,13 +1284,24 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var generatedPdfUri by remember { mutableStateOf<Uri?>(null) }
     var generatedPdfSizeLabel by remember { mutableStateOf("") }
 
-    fun saveFields() {
+    fun saveFields(forceDefaults: Boolean = false) {
+        val discountParsed = discountPct.replace(',', '.').toDoubleOrNull()
+        val discountAmountParsed = parseRublesToKopecks(discountAmt)
+        val extraFeeParsed = parseRublesToKopecks(extraFee)
+        val complexityParsed = complexity.replace(',', '.').toDoubleOrNull()
+        if (!forceDefaults) {
+            if (discountParsed == null || discountAmountParsed == null ||
+                extraFeeParsed == null || complexityParsed == null
+            ) {
+                return
+            }
+        }
         vm.saveEstimateFields(
             title, clientName, clientAddress, workTitle,
-            discountPct.replace(',', '.').toDoubleOrNull() ?: 0.0,
-            parseRublesToKopecks(discountAmt) ?: 0L,
-            parseRublesToKopecks(extraFee) ?: 0L,
-            complexity.replace(',', '.').toDoubleOrNull() ?: 1.0,
+            discountParsed ?: 0.0,
+            discountAmountParsed ?: 0L,
+            extraFeeParsed ?: 0L,
+            complexityParsed ?: 1.0,
             settings.defaultTaxPercent,
             true,
             comment,
@@ -1263,7 +1323,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     ) {
         if (state.loading || estimate == null) return@LaunchedEffect
         delay(900)
-        saveFields()
+        saveFields(forceDefaults = false)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -1369,8 +1429,8 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                         } else {
                             vm.addQuickLine(quickName, quickUnit, quickPrice, quickQty)
                             quickName = ""
-                            expandedMainCategoryKeys = expandedMainCategoryKeys + UNCATEGORIZED_LINES_KEY
-                            highlightedMainCategoryKey = UNCATEGORIZED_LINES_KEY
+                            expandedMainCategoryKeys = expandedMainCategoryKeys + EstimateLineCategoryKeys.UNCATEGORIZED
+                            highlightedMainCategoryKey = EstimateLineCategoryKeys.UNCATEGORIZED
                             scope.launch { showSnack("✓ Добавлено в «Прочее»") }
                         }
                     }
@@ -1444,6 +1504,11 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
         Text("Итог", color = HdTextPrimary)
         HdTextField(discountPct, { discountPct = it }, "Скидка, %")
         HdTextField(discountAmt, { discountAmt = it }, "Скидка, ₽")
+        Text(
+            "Скидка в процентах и в рублях суммируются.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
         HdTextField(extraFee, { extraFee = it }, "Доплата, ₽")
         HdTextField(complexity, { complexity = it }, "Коэффициент сложности")
         Row {
@@ -1463,7 +1528,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             Text("Итого: ${formatRubles(it.totalKopecks)}", color = HdTextPrimary, modifier = Modifier.padding(vertical = 8.dp))
         }
 
-        HdSecondaryButton("Сохранить сейчас") { saveFields() }
+        HdSecondaryButton("Сохранить сейчас") { saveFields(forceDefaults = true) }
         Spacer(Modifier.height(8.dp))
         HdPrimaryButton("Сформировать PDF") { showPdfPreview = true }
     }
@@ -1500,7 +1565,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             confirmButton = {
                 HdPrimaryButton("Создать PDF") {
                     scope.launch {
-                        saveFields()
+                        saveFields(forceDefaults = true)
                         val data = vm.getWithLines() ?: return@launch
                         val calc = vm.state.value.calculation ?: return@launch
                         val file = File(context.cacheDir, "smeta_${estimateId}.pdf")
@@ -1565,7 +1630,15 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
 }
 
 private const val FAVORITES_PICKER_CATEGORY_ID = -1L
-private const val UNCATEGORIZED_LINES_KEY = -2L
+
+private fun lineCategoryKey(line: EstimateLineEntity, serviceToCategory: Map<Long, Long>): Long {
+    line.categoryKey?.let { return it }
+    val catalogId = line.catalogServiceId
+    if (catalogId != null) {
+        return serviceToCategory[catalogId] ?: EstimateLineCategoryKeys.ORPHAN_CATALOG
+    }
+    return EstimateLineCategoryKeys.UNCATEGORIZED
+}
 
 private data class MainLineGroup(
     val categoryKey: Long,
@@ -1579,9 +1652,7 @@ private fun buildMainLineGroups(state: EstimateEditorUiState): List<MainLineGrou
         services.forEach { serviceToCategory[it.id] = catId }
     }
     state.favorites.forEach { serviceToCategory[it.id] = it.categoryId }
-    val grouped = state.lines.groupBy { line ->
-        line.catalogServiceId?.let { serviceToCategory[it] } ?: UNCATEGORIZED_LINES_KEY
-    }
+    val grouped = state.lines.groupBy { line -> lineCategoryKey(line, serviceToCategory) }
     return grouped.map { (key, lines) ->
         MainLineGroup(
             categoryKey = key,
@@ -1593,7 +1664,8 @@ private fun buildMainLineGroups(state: EstimateEditorUiState): List<MainLineGrou
 
 private fun categoryTitle(state: EstimateEditorUiState, categoryKey: Long): String = when (categoryKey) {
     FAVORITES_PICKER_CATEGORY_ID -> "Избранное"
-    UNCATEGORIZED_LINES_KEY -> "Прочее"
+    EstimateLineCategoryKeys.UNCATEGORIZED -> "Прочее"
+    EstimateLineCategoryKeys.ORPHAN_CATALOG -> "Снято с прайса"
     else -> state.categories.find { it.id == categoryKey }?.name ?: "Категория"
 }
 
@@ -1819,7 +1891,7 @@ private fun MainServicePickerPanel(
                             enabled = selectedServiceIds.isNotEmpty(),
                         ) {
                             val picked = servicesInCategory.filter { selectedServiceIds.contains(it.id) }
-                            val key = activeCategoryId ?: UNCATEGORIZED_LINES_KEY
+                            val key = activeCategoryId ?: EstimateLineCategoryKeys.UNCATEGORIZED
                             onAddServices(picked, key)
                             selectedServiceIds = emptySet()
                             step = ServicePickerStep.Categories
@@ -1881,9 +1953,8 @@ private fun LineEditor(
     var qty by remember(line.id) { mutableStateOf(line.quantity.toString()) }
     var price by remember(line.id) { mutableStateOf((line.unitPriceKopecks / 100.0).toString()) }
     var note by remember(line.id) { mutableStateOf(line.note ?: "") }
-    var unit by remember(line.id) {
-        mutableStateOf(line.unit.takeIf { it in HdQuickUnits } ?: HdQuickUnits.first())
-    }
+    var unit by remember(line.id) { mutableStateOf(line.unit) }
+    val unitFromQuickList = unit in HdQuickUnits
     HdCard(Modifier.padding(vertical = 4.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -1896,7 +1967,12 @@ private fun LineEditor(
             }
         }
         if (allowUnitChoice) {
-            HdUnitChoiceRow(unit, { unit = it })
+            if (unitFromQuickList) {
+                HdUnitChoiceRow(unit, { unit = it })
+            } else {
+                Text("Единица: $unit", color = HdTextSecondary, modifier = Modifier.padding(bottom = 6.dp))
+                HdTextField(unit, { unit = it }, "Единица")
+            }
         } else {
             Text(line.unit, color = HdTextSecondary)
         }

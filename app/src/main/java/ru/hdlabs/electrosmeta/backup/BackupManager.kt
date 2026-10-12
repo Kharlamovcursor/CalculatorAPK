@@ -22,6 +22,8 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
+private const val MIN_BACKUP_PASSWORD_LENGTH = 6
+
 class BackupManager(
     private val categoryDao: CategoryDao,
     private val serviceDao: ServiceDao,
@@ -56,7 +58,7 @@ class BackupManager(
             },
             lines = estimateDao.getAllLinesOnce().map {
                 BackupLine(
-                    it.id, it.estimateId, it.catalogServiceId, it.name, it.unit,
+                    it.id, it.estimateId, it.catalogServiceId, it.categoryKey, it.name, it.unit,
                     it.unitPriceKopecks, it.quantity, it.note, it.sortOrder,
                 )
             },
@@ -77,6 +79,7 @@ class BackupManager(
     }
 
     suspend fun exportEncrypted(password: CharArray): ByteArray {
+        requireBackupPassword(password)
         val plain = buildPlainJson().toByteArray(Charsets.UTF_8)
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val key = deriveKey(password, salt)
@@ -88,6 +91,7 @@ class BackupManager(
     }
 
     suspend fun previewEncrypted(data: ByteArray, password: CharArray): BackupSummary {
+        requireBackupPassword(password)
         val backup = decryptBackup(data, password)
         return BackupSummary(
             categories = backup.categories.size,
@@ -98,6 +102,7 @@ class BackupManager(
     }
 
     suspend fun importEncrypted(data: ByteArray, password: CharArray): BackupSummary {
+        requireBackupPassword(password)
         val backup = decryptBackup(data, password)
         applyBackup(backup)
         return BackupSummary(
@@ -155,7 +160,7 @@ class BackupManager(
         backup.lines.forEach {
             estimateDao.insertLine(
                 EstimateLineEntity(
-                    it.id, it.estimateId, it.catalogServiceId, it.name, it.unit,
+                    it.id, it.estimateId, it.catalogServiceId, it.categoryKey, it.name, it.unit,
                     it.unitPriceKopecks, it.quantity, it.note, it.sortOrder,
                 ),
             )
@@ -177,6 +182,12 @@ class BackupManager(
                     it.name, it.unit, it.unitPriceKopecks, it.quantity, it.sortOrder,
                 ),
             )
+        }
+    }
+
+    private fun requireBackupPassword(password: CharArray) {
+        require(password.size >= MIN_BACKUP_PASSWORD_LENGTH) {
+            "Пароль резервной копии — не короче $MIN_BACKUP_PASSWORD_LENGTH символов"
         }
     }
 

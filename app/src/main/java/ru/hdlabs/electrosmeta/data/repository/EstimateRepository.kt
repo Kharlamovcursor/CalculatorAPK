@@ -9,6 +9,7 @@ import ru.hdlabs.electrosmeta.data.local.entities.EstimateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.domain.EstimateCalculator
+import ru.hdlabs.electrosmeta.domain.EstimateLineCategoryKeys
 
 class EstimateRepository(
     private val estimateDao: EstimateDao,
@@ -61,6 +62,7 @@ class EstimateRepository(
             EstimateLineEntity(
                 estimateId = estimateId,
                 catalogServiceId = service.id,
+                categoryKey = service.categoryId,
                 name = service.name,
                 unit = service.unit,
                 unitPriceKopecks = service.priceKopecks,
@@ -80,11 +82,13 @@ class EstimateRepository(
         priceKopecks: Long,
         quantity: Double,
         sortOrder: Int,
+        categoryKey: Long? = null,
     ) {
         estimateDao.insertLine(
             EstimateLineEntity(
                 estimateId = estimateId,
                 catalogServiceId = catalogServiceId,
+                categoryKey = categoryKey,
                 name = name,
                 unit = unit,
                 unitPriceKopecks = priceKopecks,
@@ -104,7 +108,16 @@ class EstimateRepository(
         quantity: Double,
         sortOrder: Int,
     ) {
-        addLineSnapshot(estimateId, null, name, unit, priceKopecks, quantity, sortOrder)
+        addLineSnapshot(
+            estimateId,
+            null,
+            name,
+            unit,
+            priceKopecks,
+            quantity,
+            sortOrder,
+            EstimateLineCategoryKeys.UNCATEGORIZED,
+        )
     }
 
     suspend fun updateLine(line: EstimateLineEntity) {

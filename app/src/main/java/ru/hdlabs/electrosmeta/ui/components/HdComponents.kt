@@ -38,7 +38,7 @@ import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
 
-val HdQuickUnits: List<String> = listOf("шт", "шт.", "м")
+val HdQuickUnits: List<String> = listOf("шт.", "м", "м.п.", "компл.")
 
 @Composable
 fun HdUnitChoiceRow(
