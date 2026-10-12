@@ -34,6 +34,7 @@ class SettingsRepository(private val context: Context) {
             defaultTaxPercent = prefs[Keys.TAX_PERCENT] ?: 0.0,
             taxLabel = prefs[Keys.TAX_LABEL] ?: "Без НДС",
             showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: false,
+            categoryHighlightStyle = CategoryHighlightStyle.fromStorage(prefs[Keys.CATEGORY_HIGHLIGHT]),
         )
     }
 
@@ -57,6 +58,7 @@ class SettingsRepository(private val context: Context) {
                 defaultTaxPercent = prefs[Keys.TAX_PERCENT] ?: 0.0,
                 taxLabel = prefs[Keys.TAX_LABEL] ?: "Без НДС",
                 showComplexityInPdf = prefs[Keys.SHOW_COMPLEXITY] ?: false,
+                categoryHighlightStyle = CategoryHighlightStyle.fromStorage(prefs[Keys.CATEGORY_HIGHLIGHT]),
             )
             val updated = transform(current)
             prefs[Keys.ANIM_SPEED] = updated.animationSpeedPercent
@@ -76,6 +78,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.TAX_PERCENT] = updated.defaultTaxPercent
             prefs[Keys.TAX_LABEL] = updated.taxLabel
             prefs[Keys.SHOW_COMPLEXITY] = updated.showComplexityInPdf
+            prefs[Keys.CATEGORY_HIGHLIGHT] = updated.categoryHighlightStyle.name
         }
     }
 
@@ -97,5 +100,6 @@ class SettingsRepository(private val context: Context) {
         val TAX_PERCENT = doublePreferencesKey("tax_percent")
         val TAX_LABEL = stringPreferencesKey("tax_label")
         val SHOW_COMPLEXITY = booleanPreferencesKey("show_complexity")
+        val CATEGORY_HIGHLIGHT = stringPreferencesKey("category_highlight")
     }
 }

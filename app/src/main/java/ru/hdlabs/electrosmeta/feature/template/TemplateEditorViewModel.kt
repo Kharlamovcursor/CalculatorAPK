@@ -53,18 +53,22 @@ class TemplateEditorViewModel(
     fun reload() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true)
-            val content = templateRepository.getWithContent(templateId)
-            if (content != null) {
-                val order = content.categories.sortedBy { it.sortOrder }.map { it.categoryKey }
-                _state.value = _state.value.copy(
-                    template = content.template,
-                    categoryOrder = order,
-                    lines = content.lines,
-                    loading = false,
-                )
-            } else {
-                _state.value = _state.value.copy(loading = false)
-            }
+            refreshFromDatabase()
+        }
+    }
+
+    private suspend fun refreshFromDatabase() {
+        val content = templateRepository.getWithContent(templateId)
+        if (content != null) {
+            val order = content.categories.sortedBy { it.sortOrder }.map { it.categoryKey }
+            _state.value = _state.value.copy(
+                template = content.template,
+                categoryOrder = order,
+                lines = content.lines,
+                loading = false,
+            )
+        } else {
+            _state.value = _state.value.copy(loading = false)
         }
     }
 
@@ -86,14 +90,14 @@ class TemplateEditorViewModel(
     fun updateLine(line: EstimateTemplateLineEntity) {
         viewModelScope.launch {
             templateRepository.updateLine(line)
-            reload()
+            refreshFromDatabase()
         }
     }
 
     fun deleteLine(lineId: Long) {
         viewModelScope.launch {
             templateRepository.deleteLine(lineId)
-            reload()
+            refreshFromDatabase()
         }
     }
 

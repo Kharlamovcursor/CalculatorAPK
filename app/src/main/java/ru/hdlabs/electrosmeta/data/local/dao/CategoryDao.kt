@@ -13,6 +13,9 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE archived = 0 ORDER BY sortOrder ASC, id ASC")
     fun observeActive(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories WHERE archived = 1 ORDER BY sortOrder ASC, id ASC")
+    fun observeArchived(): Flow<List<CategoryEntity>>
+
     @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
     fun observeAll(): Flow<List<CategoryEntity>>
 

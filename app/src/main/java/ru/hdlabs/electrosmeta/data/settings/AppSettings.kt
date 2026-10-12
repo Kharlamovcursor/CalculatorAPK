@@ -20,4 +20,5 @@ data class AppSettings(
     val defaultTaxPercent: Double = 0.0,
     val taxLabel: String = "Без НДС",
     val showComplexityInPdf: Boolean = false,
+    val categoryHighlightStyle: CategoryHighlightStyle = CategoryHighlightStyle.SoftGlow,
 )

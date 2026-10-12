@@ -59,33 +59,37 @@ class EstimateEditorViewModel(
     fun reload() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true)
-            val withLines = estimateRepository.getWithLines(estimateId)
-            if (withLines != null) {
-                estimateRepository.ensureMainType(withLines.estimate)
-                val fresh = estimateRepository.getWithLines(estimateId) ?: withLines
-                val subtotal = fresh.lines.sumOf {
-                    EstimateCalculator.lineTotalKopecks(it.quantity, it.unitPriceKopecks)
-                }
-                val calc = EstimateCalculator.calculate(
-                    CalculationInput(
-                        linesSubtotalKopecks = subtotal,
-                        discountPercent = fresh.estimate.discountPercent,
-                        discountAmountKopecks = fresh.estimate.discountAmountKopecks,
-                        extraFeeKopecks = fresh.estimate.extraFeeKopecks,
-                        complexityMultiplier = fresh.estimate.complexityMultiplier,
-                        taxPercent = fresh.estimate.taxPercent,
-                        roundToWholeRubles = fresh.estimate.roundToWholeRubles,
-                    ),
-                )
-                _state.value = _state.value.copy(
-                    estimate = fresh.estimate,
-                    lines = fresh.lines,
-                    calculation = calc,
-                    loading = false,
-                )
-            } else {
-                _state.value = _state.value.copy(loading = false)
+            refreshFromDatabase()
+        }
+    }
+
+    private suspend fun refreshFromDatabase() {
+        val withLines = estimateRepository.getWithLines(estimateId)
+        if (withLines != null) {
+            estimateRepository.ensureMainType(withLines.estimate)
+            val fresh = estimateRepository.getWithLines(estimateId) ?: withLines
+            val subtotal = fresh.lines.sumOf {
+                EstimateCalculator.lineTotalKopecks(it.quantity, it.unitPriceKopecks)
             }
+            val calc = EstimateCalculator.calculate(
+                CalculationInput(
+                    linesSubtotalKopecks = subtotal,
+                    discountPercent = fresh.estimate.discountPercent,
+                    discountAmountKopecks = fresh.estimate.discountAmountKopecks,
+                    extraFeeKopecks = fresh.estimate.extraFeeKopecks,
+                    complexityMultiplier = fresh.estimate.complexityMultiplier,
+                    taxPercent = fresh.estimate.taxPercent,
+                    roundToWholeRubles = fresh.estimate.roundToWholeRubles,
+                ),
+            )
+            _state.value = _state.value.copy(
+                estimate = fresh.estimate,
+                lines = fresh.lines,
+                calculation = calc,
+                loading = false,
+            )
+        } else {
+            _state.value = _state.value.copy(loading = false)
         }
     }
 
@@ -124,14 +128,14 @@ class EstimateEditorViewModel(
     fun updateLine(line: EstimateLineEntity) {
         viewModelScope.launch {
             estimateRepository.updateLine(line)
-            reload()
+            refreshFromDatabase()
         }
     }
 
     fun removeLine(lineId: Long) {
         viewModelScope.launch {
             estimateRepository.deleteLine(lineId, estimateId)
-            reload()
+            refreshFromDatabase()
         }
     }
 
@@ -160,25 +164,73 @@ class EstimateEditorViewModel(
         roundRubles: Boolean,
         comment: String,
     ) {
-        val current = _state.value.estimate ?: return
         viewModelScope.launch {
-            estimateRepository.saveEstimate(
-                current.copy(
-                    title = title,
-                    clientName = clientName.ifBlank { null },
-                    clientAddress = clientAddress.ifBlank { null },
-                    workTitle = workTitle.ifBlank { null },
-                    discountPercent = discountPercent,
-                    discountAmountKopecks = discountAmountKopecks,
-                    extraFeeKopecks = extraFeeKopecks,
-                    complexityMultiplier = complexity,
-                    taxPercent = taxPercent,
-                    roundToWholeRubles = roundRubles,
-                    comment = comment.ifBlank { null },
-                ),
+            persistEstimateFields(
+                title,
+                clientName,
+                clientAddress,
+                workTitle,
+                discountPercent,
+                discountAmountKopecks,
+                extraFeeKopecks,
+                complexity,
+                taxPercent,
+                roundRubles,
+                comment,
             )
-            reload()
         }
+    }
+
+    suspend fun persistEstimateFields(
+        title: String,
+        clientName: String,
+        clientAddress: String,
+        workTitle: String,
+        discountPercent: Double,
+        discountAmountKopecks: Long,
+        extraFeeKopecks: Long,
+        complexity: Double,
+        taxPercent: Double,
+        roundRubles: Boolean,
+        comment: String,
+    ): Boolean {
+        val current = _state.value.estimate ?: return false
+        val updated = current.copy(
+            title = title,
+            clientName = clientName.ifBlank { null },
+            clientAddress = clientAddress.ifBlank { null },
+            workTitle = workTitle.ifBlank { null },
+            discountPercent = discountPercent,
+            discountAmountKopecks = discountAmountKopecks,
+            extraFeeKopecks = extraFeeKopecks,
+            complexityMultiplier = complexity,
+            taxPercent = taxPercent,
+            roundToWholeRubles = roundRubles,
+            comment = comment.ifBlank { null },
+        )
+        estimateRepository.saveEstimate(updated)
+        val fresh = estimateRepository.getWithLines(estimateId) ?: return true
+        val subtotal = fresh.lines.sumOf {
+            EstimateCalculator.lineTotalKopecks(it.quantity, it.unitPriceKopecks)
+        }
+        val calc = EstimateCalculator.calculate(
+            CalculationInput(
+                linesSubtotalKopecks = subtotal,
+                discountPercent = fresh.estimate.discountPercent,
+                discountAmountKopecks = fresh.estimate.discountAmountKopecks,
+                extraFeeKopecks = fresh.estimate.extraFeeKopecks,
+                complexityMultiplier = fresh.estimate.complexityMultiplier,
+                taxPercent = fresh.estimate.taxPercent,
+                roundToWholeRubles = fresh.estimate.roundToWholeRubles,
+            ),
+        )
+        _state.value = _state.value.copy(
+            estimate = fresh.estimate,
+            lines = fresh.lines,
+            calculation = calc,
+            loading = false,
+        )
+        return true
     }
 
     fun getWithLines(): EstimateWithLines? {

@@ -1,17 +1,25 @@
 package ru.hdlabs.electrosmeta.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -26,7 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusEvent
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -177,6 +188,20 @@ fun HdSecondaryButton(
 }
 
 @Composable
+fun HdDialogFieldColumn(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
+        content = content,
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 fun HdTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -184,11 +209,20 @@ fun HdTextField(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
 ) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoViewRequester)
+            .onFocusEvent { focusState ->
+                if (focusState.isFocused) {
+                    scope.launch { bringIntoViewRequester.bringIntoView() }
+                }
+            },
         singleLine = singleLine,
         shape = RoundedCornerShape(12.dp),
         colors = OutlinedTextFieldDefaults.colors(

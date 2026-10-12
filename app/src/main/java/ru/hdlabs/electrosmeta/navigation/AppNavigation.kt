@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.ripple
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,10 +50,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -116,12 +122,16 @@ import ru.hdlabs.electrosmeta.ui.components.reorderOnLongPressDrag
 import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
 import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 import ru.hdlabs.electrosmeta.update.UpdateInfo
+import ru.hdlabs.electrosmeta.pdf.PdfStorageHelper
 import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
+import ru.hdlabs.electrosmeta.data.settings.CategoryHighlightStyle
 import ru.hdlabs.electrosmeta.ui.components.HdCard
+import ru.hdlabs.electrosmeta.ui.components.categoryHighlightColors
 import ru.hdlabs.electrosmeta.ui.components.HdPrimaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdQuickUnits
 import ru.hdlabs.electrosmeta.ui.components.HdUnitChoiceRow
 import ru.hdlabs.electrosmeta.ui.components.HdSecondaryButton
+import ru.hdlabs.electrosmeta.ui.components.HdDialogFieldColumn
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
 import androidx.compose.foundation.background
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
@@ -206,6 +216,7 @@ private fun HdScaffold(
             val mod = Modifier
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
+                .imePadding()
             if (scroll) {
                 Column(mod.verticalScroll(rememberScrollState())) { content() }
             } else {
@@ -274,6 +285,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = maxHeight)
+                    .imePadding()
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -353,6 +365,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
         ),
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val template = state.template
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
     var showServicePicker by remember { mutableStateOf(false) }
@@ -380,6 +393,8 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                 group = group,
                 expanded = expandedKeys.contains(group.categoryKey),
                 highlighted = false,
+                highlightStyle = settings.categoryHighlightStyle,
+                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
                 onToggleExpand = {
                     expandedKeys = if (expandedKeys.contains(group.categoryKey)) {
                         expandedKeys - group.categoryKey
@@ -438,6 +453,8 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
         AnimatedVisibility(visible = showServicePicker) {
             MainServicePickerPanel(
                 state = state.toPricePickerState(),
+                highlightStyle = settings.categoryHighlightStyle,
+                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
                 onAddServices = { services, key ->
                     vm.addServices(services, key)
                     expandedKeys = expandedKeys + key
@@ -598,7 +615,11 @@ private fun HistoryScreen(nav: NavHostController) {
         AlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("Переименовать") },
-            text = { HdTextField(renameTitle, { renameTitle = it }, "Название") },
+            text = {
+                HdDialogFieldColumn {
+                    HdTextField(renameTitle, { renameTitle = it }, "Название")
+                }
+            },
             confirmButton = {
                 HdPrimaryButton("Сохранить") {
                     scope.launch {
@@ -620,6 +641,9 @@ private fun PriceListScreen(nav: NavHostController) {
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val services by app.container.priceRepository.observeAllServices()
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val archivedCategories by app.container.priceRepository.observeArchivedCategories()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    var showArchivedCategories by remember { mutableStateOf(false) }
     var showAddCategory by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
     var editingService by remember { mutableStateOf<ServiceEntity?>(null) }
@@ -790,13 +814,44 @@ private fun PriceListScreen(nav: NavHostController) {
                 }
             }
         }
+        if (archivedCategories.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            HdSecondaryButton(
+                if (showArchivedCategories) {
+                    "Свернуть скрытые"
+                } else {
+                    "Скрытые категории (${archivedCategories.size})"
+                },
+            ) {
+                showArchivedCategories = !showArchivedCategories
+            }
+            AnimatedVisibility(visible = showArchivedCategories) {
+                Column {
+                    archivedCategories.forEach { cat ->
+                        HdCard(Modifier.padding(top = 8.dp)) {
+                            Text(cat.name, color = HdTextPrimary)
+                            Text("Не показывается в прайсе и при добавлении услуг", color = HdTextSecondary)
+                            HdSecondaryButton("Вернуть в прайс") {
+                                scope.launch {
+                                    app.container.priceRepository.restoreCategoryWithServices(cat.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (showAddCategory) {
         AlertDialog(
             onDismissRequest = { showAddCategory = false },
             title = { Text("Новая категория") },
-            text = { HdTextField(newCategoryName, { newCategoryName = it }, "Название") },
+            text = {
+                HdDialogFieldColumn {
+                    HdTextField(newCategoryName, { newCategoryName = it }, "Название")
+                }
+            },
             confirmButton = {
                 HdPrimaryButton("Сохранить") {
                     scope.launch {
@@ -843,7 +898,7 @@ private fun PriceListScreen(nav: NavHostController) {
             onDismissRequest = { editingService = null },
             title = { Text("Услуга") },
             text = {
-                Column {
+                HdDialogFieldColumn {
                     HdTextField(name, { name = it }, "Название")
                     HdTextField(unit, { unit = it }, "Единица")
                     HdTextField(price, { price = it }, "Цена, ₽")
@@ -868,7 +923,11 @@ private fun PriceListScreen(nav: NavHostController) {
         AlertDialog(
             onDismissRequest = { editingCategory = null },
             title = { Text("Категория") },
-            text = { HdTextField(name, { name = it }, "Название") },
+            text = {
+                HdDialogFieldColumn {
+                    HdTextField(name, { name = it }, "Название")
+                }
+            },
             confirmButton = {
                 HdPrimaryButton("Сохранить") {
                     scope.launch {
@@ -967,6 +1026,41 @@ private fun SettingsScreen(nav: NavHostController) {
             Switch(settings.powerSaveMode, onCheckedChange = {
                 scope.launch { app.container.settingsRepository.update { s -> s.copy(powerSaveMode = it) } }
             })
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Подсветка категории в смете", color = HdTextPrimary)
+        Text(
+            "Как выделяется категория после добавления позиции или в выборе из прайса.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        listOf(
+            CategoryHighlightStyle.SoftGlow to "Мягкое свечение (синий, спокойно)",
+            CategoryHighlightStyle.PulseBorder to "Пульсирующая рамка",
+            CategoryHighlightStyle.GradientRing to "Градиент синий → оранжевый",
+        ).forEach { (style, label) ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
+                        }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = settings.categoryHighlightStyle == style,
+                    onCheckedChange = {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
+                        }
+                    },
+                    colors = CheckboxDefaults.colors(checkedColor = HdBlue),
+                )
+                Text(label, color = HdTextPrimary)
+            }
         }
         Spacer(Modifier.height(16.dp))
         HdCard {
@@ -1282,9 +1376,14 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var showPdfPreview by remember { mutableStateOf(false) }
     var showPdfReady by remember { mutableStateOf(false) }
     var generatedPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var generatedPdfFile by remember { mutableStateOf<File?>(null) }
+    var generatedPdfDisplayName by remember { mutableStateOf("") }
     var generatedPdfSizeLabel by remember { mutableStateOf("") }
+    var pdfDownloadsPath by remember { mutableStateOf<String?>(null) }
+    var showSaveResultDialog by remember { mutableStateOf(false) }
+    var manualSavePhase by remember { mutableStateOf(ManualSavePhase.Idle) }
 
-    fun saveFields(forceDefaults: Boolean = false) {
+    suspend fun persistForm(forceDefaults: Boolean): Boolean {
         val discountParsed = discountPct.replace(',', '.').toDoubleOrNull()
         val discountAmountParsed = parseRublesToKopecks(discountAmt)
         val extraFeeParsed = parseRublesToKopecks(extraFee)
@@ -1293,11 +1392,14 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             if (discountParsed == null || discountAmountParsed == null ||
                 extraFeeParsed == null || complexityParsed == null
             ) {
-                return
+                return false
             }
         }
-        vm.saveEstimateFields(
-            title, clientName, clientAddress, workTitle,
+        return vm.persistEstimateFields(
+            title,
+            clientName,
+            clientAddress,
+            workTitle,
             discountParsed ?: 0.0,
             discountAmountParsed ?: 0L,
             extraFeeParsed ?: 0L,
@@ -1306,6 +1408,19 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             true,
             comment,
         )
+    }
+
+    fun saveFields(forceDefaults: Boolean = false) {
+        scope.launch { persistForm(forceDefaults) }
+    }
+
+    LaunchedEffect(manualSavePhase) {
+        if (manualSavePhase == ManualSavePhase.Success) {
+            delay(650)
+            if (manualSavePhase == ManualSavePhase.Success) {
+                manualSavePhase = ManualSavePhase.Idle
+            }
+        }
     }
 
     LaunchedEffect(
@@ -1355,21 +1470,20 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
         HdCard(Modifier.padding(bottom = 12.dp)) {
             Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
             mainLineGroups.forEach { group ->
-                MainCategoryLinesSection(
-                    group = group,
-                    expanded = expandedMainCategoryKeys.contains(group.categoryKey),
-                    highlighted = highlightedMainCategoryKey == group.categoryKey,
-                    onToggleExpand = {
+                    MainCategoryLinesSection(
+                        group = group,
+                        expanded = expandedMainCategoryKeys.contains(group.categoryKey),
+                        highlighted = highlightedMainCategoryKey == group.categoryKey,
+                        highlightStyle = settings.categoryHighlightStyle,
+                        animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
+                        onToggleExpand = {
                         expandedMainCategoryKeys = if (expandedMainCategoryKeys.contains(group.categoryKey)) {
                             expandedMainCategoryKeys - group.categoryKey
                         } else {
                             expandedMainCategoryKeys + group.categoryKey
                         }
                     },
-                    onUpdateLine = { line ->
-                        vm.updateLine(line)
-                        scope.launch { showSnack("✓ Позиция обновлена") }
-                    },
+                    onUpdateLine = { line -> vm.updateLine(line) },
                     onUpdateFailed = {
                         scope.launch { showSnack("Не удалось обновить — проверьте количество и цену") }
                     },
@@ -1483,6 +1597,8 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             ) {
                 MainServicePickerPanel(
                     state = state.toPricePickerState(),
+                    highlightStyle = settings.categoryHighlightStyle,
+                    animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
                     onAddServices = { services, pickerCategoryKey ->
                         val keys = services.map { it.categoryId }.toSet()
                         val highlight = keys.firstOrNull() ?: pickerCategoryKey
@@ -1528,7 +1644,23 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             Text("Итого: ${formatRubles(it.totalKopecks)}", color = HdTextPrimary, modifier = Modifier.padding(vertical = 8.dp))
         }
 
-        HdSecondaryButton("Сохранить сейчас") { saveFields(forceDefaults = true) }
+        ManualSaveEstimateButton(
+            phase = manualSavePhase,
+            onClick = {
+                scope.launch {
+                    manualSavePhase = ManualSavePhase.Saving
+                    val ok = persistForm(forceDefaults = true)
+                    if (!ok) {
+                        manualSavePhase = ManualSavePhase.Idle
+                        showSnack("Проверьте скидки, доплату и коэффициент сложности")
+                        return@launch
+                    }
+                    manualSavePhase = ManualSavePhase.Success
+                    delay(320)
+                    showSaveResultDialog = true
+                }
+            },
+        )
         Spacer(Modifier.height(8.dp))
         HdPrimaryButton("Сформировать PDF") { showPdfPreview = true }
     }
@@ -1548,6 +1680,41 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     )
     }
 
+    if (showSaveResultDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveResultDialog = false },
+            title = { Text("Сохранено на устройстве") },
+            text = {
+                Column {
+                    Text(
+                        "Расчёт «${title.ifBlank { "Без названия" }}» записан в локальную базу приложения.",
+                        color = HdTextPrimary,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text("Где найти", color = HdTextPrimary)
+                    Text(
+                        "Главный экран → «История». Там список всех смет на этом телефоне.",
+                        color = HdTextSecondary,
+                    )
+                    Text(
+                        "В интернет данные не отправляются автоматически.",
+                        color = HdTextSecondary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                HdPrimaryButton("Открыть «История»") {
+                    showSaveResultDialog = false
+                    nav.navigate(Routes.HISTORY)
+                }
+            },
+            dismissButton = {
+                HdSecondaryButton("Остаться в расчёте") { showSaveResultDialog = false }
+            },
+        )
+    }
+
     if (showPdfPreview) {
         val total = state.calculation?.totalKopecks
         AlertDialog(
@@ -1565,17 +1732,23 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             confirmButton = {
                 HdPrimaryButton("Создать PDF") {
                     scope.launch {
-                        saveFields(forceDefaults = true)
+                        if (!persistForm(forceDefaults = true)) return@launch
                         val data = vm.getWithLines() ?: return@launch
                         val calc = vm.state.value.calculation ?: return@launch
-                        val file = File(context.cacheDir, "smeta_${estimateId}.pdf")
-                        app.container.pdfGenerator.generate(data, settings, calc, file)
+                        val displayName = PdfStorageHelper.buildDisplayName(data.estimate.title)
+                        val file = File(context.cacheDir, "export_${estimateId}_${System.currentTimeMillis()}.pdf")
+                        withContext(Dispatchers.IO) {
+                            app.container.pdfGenerator.generate(data, settings, calc, file)
+                        }
                         val uri = FileProvider.getUriForFile(
                             context,
                             "${context.packageName}.fileprovider",
                             file,
                         )
                         generatedPdfUri = uri
+                        generatedPdfFile = file
+                        generatedPdfDisplayName = displayName
+                        pdfDownloadsPath = null
                         generatedPdfSizeLabel = when {
                             file.length() < 1024 -> "${file.length()} Б"
                             else -> "${file.length() / 1024} КБ"
@@ -1595,37 +1768,135 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             onDismissRequest = { showPdfReady = false },
             title = { Text("PDF готов") },
             text = {
-                Text(
-                    "Размер файла: $generatedPdfSizeLabel. Логотип HDLabs в PDF не добавляется.",
-                    color = HdTextSecondary,
-                )
+                Column {
+                    Text(
+                        "Размер: $generatedPdfSizeLabel. Логотип HDLabs в PDF не добавляется.",
+                        color = HdTextSecondary,
+                    )
+                    pdfDownloadsPath?.let { path ->
+                        Text(
+                            "Сохранено на телефоне: $path",
+                            color = HdBlue,
+                            modifier = Modifier.padding(top = 10.dp),
+                        )
+                    }
+                }
             },
             confirmButton = {
-                HdPrimaryButton("Открыть") {
-                    if (uri != null) {
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "application/pdf")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                Column(Modifier.fillMaxWidth()) {
+                    HdPrimaryButton("Открыть") {
+                        if (uri != null) {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
                     }
-                    showPdfReady = false
+                    Spacer(Modifier.height(8.dp))
+                    HdSecondaryButton("Сохранить на телефон") {
+                        scope.launch {
+                            val file = generatedPdfFile
+                            if (file == null) {
+                                showSnack("Файл PDF не найден — создайте PDF заново")
+                                return@launch
+                            }
+                            val result = withContext(Dispatchers.IO) {
+                                PdfStorageHelper.saveToDownloads(
+                                    context,
+                                    file,
+                                    generatedPdfDisplayName,
+                                )
+                            }
+                            result.fold(
+                                onSuccess = { path ->
+                                    pdfDownloadsPath = path
+                                    showSnack("✓ PDF: $path")
+                                },
+                                onFailure = {
+                                    showSnack("Не удалось сохранить: ${it.message ?: "ошибка"}")
+                                },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    HdSecondaryButton("Отправить") {
+                        if (uri != null) {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Отправить смету"))
+                        }
+                    }
                 }
             },
             dismissButton = {
-                HdSecondaryButton("Отправить") {
-                    if (uri != null) {
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/pdf"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Отправить смету"))
-                    }
-                    showPdfReady = false
-                }
+                HdSecondaryButton("Закрыть") { showPdfReady = false }
             },
         )
+    }
+}
+
+private enum class ManualSavePhase { Idle, Saving, Success }
+
+@Composable
+private fun ManualSaveEstimateButton(
+    phase: ManualSavePhase,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when (phase) {
+            ManualSavePhase.Success -> 1.05f
+            ManualSavePhase.Saving -> 0.96f
+            else -> if (pressed) 0.94f else 1f
+        },
+        animationSpec = if (phase == ManualSavePhase.Success) {
+            spring(dampingRatio = 0.55f, stiffness = 380f)
+        } else {
+            tween(120)
+        },
+        label = "manualSaveScale",
+    )
+    val label = when (phase) {
+        ManualSavePhase.Saving -> "Сохранение…"
+        ManualSavePhase.Success -> "Сохранено"
+        ManualSavePhase.Idle -> "Сохранить сейчас"
+    }
+    val containerColor = when (phase) {
+        ManualSavePhase.Success -> HdBlue.copy(alpha = 0.35f)
+        ManualSavePhase.Saving -> HdPanel.copy(alpha = 0.85f)
+        else -> if (pressed) HdOrange.copy(alpha = 0.35f) else HdPanel
+    }
+    val border = when (phase) {
+        ManualSavePhase.Success -> BorderStroke(2.5.dp, HdBlue)
+        ManualSavePhase.Saving -> BorderStroke(1.dp, HdTextSecondary.copy(alpha = 0.35f))
+        else -> BorderStroke(
+            if (pressed) 2.5.dp else 1.dp,
+            if (pressed) HdOrange else HdBlue.copy(alpha = 0.4f),
+        )
+    }
+    Button(
+        onClick = onClick,
+        enabled = phase != ManualSavePhase.Saving,
+        interactionSource = interactionSource,
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            disabledContainerColor = HdPanel,
+        ),
+        border = border,
+    ) {
+        if (phase == ManualSavePhase.Success) {
+            Icon(Icons.Default.Check, contentDescription = null, tint = HdBlue, modifier = Modifier.padding(end = 8.dp))
+        }
+        Text(label, color = HdTextPrimary)
     }
 }
 
@@ -1676,6 +1947,8 @@ private fun MainCategoryLinesSection(
     group: MainLineGroup,
     expanded: Boolean,
     highlighted: Boolean,
+    highlightStyle: CategoryHighlightStyle,
+    animationEnabled: Boolean,
     onToggleExpand: () -> Unit,
     onUpdateLine: (EstimateLineEntity) -> Unit,
     onUpdateFailed: () -> Unit,
@@ -1683,11 +1956,12 @@ private fun MainCategoryLinesSection(
     headerModifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val headerBg = when {
-        highlighted -> HdOrange.copy(alpha = 0.45f)
-        expanded -> HdOrange.copy(alpha = 0.22f)
-        else -> HdPanel.copy(alpha = 0.6f)
-    }
+    val highlightColors = categoryHighlightColors(
+        active = highlighted,
+        style = highlightStyle,
+        animationEnabled = animationEnabled,
+        expanded = expanded && !highlighted,
+    )
     val headerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val headerPressed by headerInteraction.collectIsPressedAsState()
     val headerScale by animateFloatAsState(if (headerPressed) 0.98f else 1f, label = "catHeaderScale")
@@ -1698,14 +1972,10 @@ private fun MainCategoryLinesSection(
                 .then(headerModifier)
                 .scale(headerScale)
                 .clip(shape)
-                .background(headerBg)
+                .background(highlightColors.background)
                 .border(
-                    width = if (highlighted) 2.5.dp else if (expanded) 1.5.dp else 1.dp,
-                    color = when {
-                        highlighted -> HdOrange
-                        expanded -> HdOrange.copy(alpha = 0.85f)
-                        else -> HdTextSecondary.copy(alpha = 0.35f)
-                    },
+                    width = highlightColors.borderWidth,
+                    brush = highlightColors.borderBrush,
                     shape = shape,
                 )
                 .clickable(
@@ -1718,13 +1988,13 @@ private fun MainCategoryLinesSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(group.title, color = if (highlighted) HdOrange else HdTextPrimary)
+                Text(group.title, color = highlightColors.titleColor)
                 Text("${group.lines.size} поз.", color = HdTextSecondary)
             }
             Icon(
                 if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = if (expanded) "Свернуть" else "Развернуть",
-                tint = HdOrange,
+                tint = HdOrange.copy(alpha = 0.85f),
             )
         }
         AnimatedVisibility(
@@ -1750,6 +2020,8 @@ private fun MainCategoryLinesSection(
 @Composable
 private fun MainServicePickerPanel(
     state: PricePickerState,
+    highlightStyle: CategoryHighlightStyle,
+    animationEnabled: Boolean,
     onAddServices: (List<ServiceEntity>, Long) -> Unit,
 ) {
     var step by remember { mutableStateOf(ServicePickerStep.Categories) }
@@ -1790,6 +2062,8 @@ private fun MainServicePickerPanel(
                             ServiceCategoryChip(
                                 name = "Избранное",
                                 selected = activeCategoryId == FAVORITES_PICKER_CATEGORY_ID,
+                                highlightStyle = highlightStyle,
+                                animationEnabled = animationEnabled,
                                 onClick = {
                                     activeCategoryId = FAVORITES_PICKER_CATEGORY_ID
                                     selectedServiceIds = emptySet()
@@ -1803,6 +2077,8 @@ private fun MainServicePickerPanel(
                             ServiceCategoryChip(
                                 name = label,
                                 selected = activeCategoryId == cat.id,
+                                highlightStyle = highlightStyle,
+                                animationEnabled = animationEnabled,
                                 onClick = {
                                     activeCategoryId = cat.id
                                     selectedServiceIds = emptySet()
@@ -1836,6 +2112,8 @@ private fun MainServicePickerPanel(
                         ServiceCategoryChip(
                             name = activeCategoryLabel,
                             selected = true,
+                            highlightStyle = highlightStyle,
+                            animationEnabled = animationEnabled,
                             onClick = {},
                         )
                         Spacer(Modifier.height(8.dp))
@@ -1908,10 +2186,16 @@ private fun MainServicePickerPanel(
 private fun ServiceCategoryChip(
     name: String,
     selected: Boolean,
+    highlightStyle: CategoryHighlightStyle,
+    animationEnabled: Boolean,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val bg = if (selected) HdOrange.copy(alpha = 0.28f) else HdPanel.copy(alpha = 0.5f)
+    val colors = categoryHighlightColors(
+        active = selected,
+        style = highlightStyle,
+        animationEnabled = animationEnabled,
+    )
     val chipInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val chipPressed by chipInteraction.collectIsPressedAsState()
     val chipScale by animateFloatAsState(if (chipPressed) 0.97f else 1f, label = "chipScale")
@@ -1921,10 +2205,10 @@ private fun ServiceCategoryChip(
             .padding(vertical = 4.dp)
             .scale(chipScale)
             .clip(shape)
-            .background(bg)
+            .background(colors.background)
             .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) HdOrange else HdTextSecondary.copy(alpha = 0.35f),
+                width = colors.borderWidth,
+                brush = colors.borderBrush,
                 shape = shape,
             )
             .clickable(
@@ -1935,10 +2219,7 @@ private fun ServiceCategoryChip(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            name,
-            color = if (selected) HdOrange else HdTextPrimary,
-        )
+        Text(name, color = colors.titleColor)
     }
 }
 
@@ -1979,16 +2260,32 @@ private fun LineEditor(
         HdTextField(qty, { qty = it }, "Кол-во")
         HdTextField(price, { price = it }, "Цена, ₽")
         HdTextField(note, { note = it }, "Примечание")
-        Spacer(Modifier.height(6.dp))
-        HdSecondaryButton("Обновить позицию") {
-            val q = qty.replace(',', '.').toDoubleOrNull()
-            val p = parseRublesToKopecks(price)
-            if (q == null || q <= 0.0 || p == null) {
-                onUpdateFailed()
-            } else {
-                val u = if (allowUnitChoice) unit else line.unit
-                onUpdate(line.copy(quantity = q, unitPriceKopecks = p, unit = u, note = note.ifBlank { null }))
-            }
+        Text(
+            "Количество и цена сохраняются автоматически",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+
+    LaunchedEffect(qty, price, note, unit, line.id) {
+        delay(750)
+        val q = qty.replace(',', '.').toDoubleOrNull()
+        val p = parseRublesToKopecks(price)
+        if (q == null || q <= 0.0 || p == null) return@LaunchedEffect
+        val u = if (allowUnitChoice) unit else line.unit
+        val updated = line.copy(
+            quantity = q,
+            unitPriceKopecks = p,
+            unit = u,
+            note = note.ifBlank { null },
+        )
+        if (updated.quantity == line.quantity &&
+            updated.unitPriceKopecks == line.unitPriceKopecks &&
+            updated.unit == line.unit &&
+            updated.note == line.note
+        ) {
+            return@LaunchedEffect
         }
+        onUpdate(updated)
     }
 }

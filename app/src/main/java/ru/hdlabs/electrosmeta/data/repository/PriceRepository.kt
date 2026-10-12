@@ -13,6 +13,8 @@ class PriceRepository(
 ) {
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeActive()
 
+    fun observeArchivedCategories(): Flow<List<CategoryEntity>> = categoryDao.observeArchived()
+
     fun observeAllCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
     fun observeServices(categoryId: Long): Flow<List<ServiceEntity>> =
@@ -41,6 +43,13 @@ class PriceRepository(
     suspend fun archiveCategory(id: Long) = categoryDao.archive(id)
 
     suspend fun restoreCategory(id: Long) = categoryDao.restore(id)
+
+    suspend fun restoreCategoryWithServices(categoryId: Long) {
+        categoryDao.restore(categoryId)
+        serviceDao.getAllOnce()
+            .filter { it.categoryId == categoryId && it.archived }
+            .forEach { serviceDao.restore(it.id) }
+    }
 
     suspend fun archiveService(id: Long) = serviceDao.archive(id)
 
