@@ -15,6 +15,9 @@ data class BackupFileV1(
     val services: List<BackupService>,
     val estimates: List<BackupEstimate>,
     val lines: List<BackupLine>,
+    val templates: List<BackupTemplate> = emptyList(),
+    val templateCategories: List<BackupTemplateCategory> = emptyList(),
+    val templateLines: List<BackupTemplateLine> = emptyList(),
 )
 
 @Serializable
@@ -90,6 +93,35 @@ data class BackupLine(
     val unitPriceKopecks: Long,
     val quantity: Double,
     val note: String?,
+    val sortOrder: Int,
+)
+
+@Serializable
+data class BackupTemplate(
+    val id: Long,
+    val name: String,
+    val sortOrder: Int,
+    val type: String,
+)
+
+@Serializable
+data class BackupTemplateCategory(
+    val id: Long,
+    val templateId: Long,
+    val categoryKey: Long,
+    val sortOrder: Int,
+)
+
+@Serializable
+data class BackupTemplateLine(
+    val id: Long,
+    val templateId: Long,
+    val categoryKey: Long,
+    val catalogServiceId: Long?,
+    val name: String,
+    val unit: String,
+    val unitPriceKopecks: Long,
+    val quantity: Double,
     val sortOrder: Int,
 )
 

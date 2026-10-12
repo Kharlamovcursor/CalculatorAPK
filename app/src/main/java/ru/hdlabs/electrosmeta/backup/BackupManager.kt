@@ -6,9 +6,13 @@ import kotlinx.serialization.json.Json
 import ru.hdlabs.electrosmeta.data.local.dao.CategoryDao
 import ru.hdlabs.electrosmeta.data.local.dao.EstimateDao
 import ru.hdlabs.electrosmeta.data.local.dao.ServiceDao
+import ru.hdlabs.electrosmeta.data.local.dao.TemplateDao
 import ru.hdlabs.electrosmeta.data.local.entities.CategoryEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateLineEntity
+import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateCategoryEntity
+import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateEntity
+import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.data.settings.SettingsRepository
 import java.security.SecureRandom
@@ -22,6 +26,7 @@ class BackupManager(
     private val categoryDao: CategoryDao,
     private val serviceDao: ServiceDao,
     private val estimateDao: EstimateDao,
+    private val templateDao: TemplateDao,
     private val settingsRepository: SettingsRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,6 +60,18 @@ class BackupManager(
                     it.unitPriceKopecks, it.quantity, it.note, it.sortOrder,
                 )
             },
+            templates = templateDao.getAllTemplatesOnce().map {
+                BackupTemplate(it.id, it.name, it.sortOrder, it.type.name)
+            },
+            templateCategories = templateDao.getAllTemplateCategoriesOnce().map {
+                BackupTemplateCategory(it.id, it.templateId, it.categoryKey, it.sortOrder)
+            },
+            templateLines = templateDao.getAllTemplateLinesOnce().map {
+                BackupTemplateLine(
+                    it.id, it.templateId, it.categoryKey, it.catalogServiceId,
+                    it.name, it.unit, it.unitPriceKopecks, it.quantity, it.sortOrder,
+                )
+            },
         )
         return json.encodeToString(backup)
     }
@@ -76,6 +93,7 @@ class BackupManager(
             categories = backup.categories.size,
             services = backup.services.size,
             estimates = backup.estimates.size,
+            templates = backup.templates.size,
         )
     }
 
@@ -86,6 +104,7 @@ class BackupManager(
             categories = backup.categories.size,
             services = backup.services.size,
             estimates = backup.estimates.size,
+            templates = backup.templates.size,
         )
     }
 
@@ -106,6 +125,9 @@ class BackupManager(
     private suspend fun applyBackup(backup: BackupFileV1) {
         settingsRepository.update { backup.settings.toAppSettings() }
         estimateDao.getAllOnce().forEach { estimateDao.deleteEstimate(it.id) }
+        templateDao.deleteAllLines()
+        templateDao.deleteAllCategories()
+        templateDao.deleteAllTemplates()
         serviceDao.deleteAll()
         categoryDao.deleteAll()
         backup.categories.forEach {
@@ -138,6 +160,24 @@ class BackupManager(
                 ),
             )
         }
+        backup.templates.forEach {
+            templateDao.insertTemplate(
+                EstimateTemplateEntity(it.id, it.name, it.sortOrder, it.type.toEstimateType()),
+            )
+        }
+        backup.templateCategories.forEach {
+            templateDao.insertCategory(
+                EstimateTemplateCategoryEntity(it.id, it.templateId, it.categoryKey, it.sortOrder),
+            )
+        }
+        backup.templateLines.forEach {
+            templateDao.insertLine(
+                EstimateTemplateLineEntity(
+                    it.id, it.templateId, it.categoryKey, it.catalogServiceId,
+                    it.name, it.unit, it.unitPriceKopecks, it.quantity, it.sortOrder,
+                ),
+            )
+        }
     }
 
     private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
@@ -152,4 +192,5 @@ data class BackupSummary(
     val categories: Int,
     val services: Int,
     val estimates: Int,
+    val templates: Int = 0,
 )

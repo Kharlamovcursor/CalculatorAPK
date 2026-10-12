@@ -584,46 +584,168 @@ private fun PriceListScreen(nav: NavHostController) {
     var showAddCategory by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
     var editingService by remember { mutableStateOf<ServiceEntity?>(null) }
+    var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
+    var archiveCategoryTarget by remember { mutableStateOf<CategoryEntity?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
+    var expandedCategoryIds by remember { mutableStateOf(setOf<Long>()) }
+    var orderedCategoryIds by remember(categories) { mutableStateOf(categories.map { it.id }) }
+    var serviceOrderByCategory by remember { mutableStateOf(mapOf<Long, List<Long>>()) }
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(categories) {
+        val ids = categories.map { it.id }
+        orderedCategoryIds = orderedCategoryIds.filter { ids.contains(it) } + ids.filter { !orderedCategoryIds.contains(it) }
+    }
+    LaunchedEffect(services, categories) {
+        val next = serviceOrderByCategory.toMutableMap()
+        categories.forEach { cat ->
+            val serviceIds = services.filter { it.categoryId == cat.id }.map { it.id }
+            val prev = next[cat.id] ?: emptyList()
+            next[cat.id] = prev.filter { serviceIds.contains(it) } + serviceIds.filter { !prev.contains(it) }
+        }
+        serviceOrderByCategory = next
+    }
+
     HdScaffold(title = "Прайс-лист", onBack = { nav.popBackStack() }) {
+        Text(
+            "Удерживайте категорию или услугу и перетащите для смены порядка. Нажмите на категорию, чтобы развернуть.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         HdSecondaryButton("Добавить категорию") { showAddCategory = true }
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Сбросить к стартовому прайсу") { confirmReset = true }
-        categories.forEach { cat ->
+        orderedCategoryIds.mapNotNull { id -> categories.find { it.id == id } }.forEachIndexed { catIndex, cat ->
+            val orderedServiceIds = serviceOrderByCategory[cat.id] ?: emptyList()
+            val orderedServices = orderedServiceIds.mapNotNull { sid ->
+                services.find { it.id == sid && it.categoryId == cat.id }
+            }
+            val expanded = expandedCategoryIds.contains(cat.id)
+            val serviceCount = services.count { it.categoryId == cat.id }
             Spacer(Modifier.height(12.dp))
-            Text(cat.name, color = HdTextPrimary)
-            services.filter { it.categoryId == cat.id }.forEach { svc ->
-                HdCard(Modifier.padding(top = 6.dp)) {
-                    Text(svc.name, color = HdTextPrimary)
-                    Text("${formatRubles(svc.priceKopecks)} / ${svc.unit}", color = HdTextSecondary)
-                    Row {
-                        Text("Изменить", color = HdTextPrimary, modifier = Modifier.clickable { editingService = svc })
-                        Text("  ·  Дубль", color = HdTextPrimary, modifier = Modifier.clickable {
-                            scope.launch {
-                                app.container.priceRepository.upsertService(
-                                    svc.copy(id = 0, name = svc.name + " (копия)", sortOrder = svc.sortOrder + 1),
-                                )
+            val catShape = RoundedCornerShape(14.dp)
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .reorderOnLongPressDrag(
+                        enabled = true,
+                        onMoveUp = {
+                            if (catIndex > 0) {
+                                val next = orderedCategoryIds.toMutableList()
+                                next[catIndex - 1] = next[catIndex].also { next[catIndex] = next[catIndex - 1] }
+                                orderedCategoryIds = next
+                                scope.launch { app.container.priceRepository.reorderCategories(next) }
                             }
-                        })
-                        Text("  ·  ★", color = if (svc.isFavorite) HdTextPrimary else HdTextSecondary, modifier = Modifier.clickable {
-                            scope.launch { app.container.priceRepository.toggleFavorite(svc.id, !svc.isFavorite) }
-                        })
-                        Text("  ·  Архив", color = HdTextPrimary, modifier = Modifier.clickable {
-                            scope.launch { app.container.priceRepository.archiveService(svc.id) }
-                        })
+                        },
+                        onMoveDown = {
+                            if (catIndex < orderedCategoryIds.lastIndex) {
+                                val next = orderedCategoryIds.toMutableList()
+                                next[catIndex + 1] = next[catIndex].also { next[catIndex] = next[catIndex + 1] }
+                                orderedCategoryIds = next
+                                scope.launch { app.container.priceRepository.reorderCategories(next) }
+                            }
+                        },
+                    )
+                    .clip(catShape)
+                    .background(HdPanelElevated.copy(alpha = 0.65f))
+                    .border(1.dp, HdTextSecondary.copy(alpha = 0.35f), catShape)
+                    .clickable {
+                        expandedCategoryIds = if (expanded) {
+                            expandedCategoryIds - cat.id
+                        } else {
+                            expandedCategoryIds + cat.id
+                        }
                     }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(cat.name, color = HdTextPrimary)
+                    Text("$serviceCount поз.", color = HdTextSecondary)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Изменить",
+                        color = HdOrange,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .clickable { editingCategory = cat },
+                    )
+                    Icon(
+                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                        tint = HdOrange,
+                    )
                 }
             }
-            HdSecondaryButton("+ Услуга в «${cat.name}»") {
-                editingService = ServiceEntity(
-                    categoryId = cat.id,
-                    name = "",
-                    unit = "шт.",
-                    priceKopecks = 0,
-                    sortOrder = services.count { it.categoryId == cat.id },
-                )
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(240)),
+                exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(tween(200)),
+            ) {
+                Column {
+                    orderedServices.forEachIndexed { svcIndex, svc ->
+                        HdCard(
+                            Modifier
+                                .padding(top = 6.dp)
+                                .reorderOnLongPressDrag(
+                                    enabled = true,
+                                    onMoveUp = {
+                                        if (svcIndex > 0) {
+                                            val next = orderedServiceIds.toMutableList()
+                                            next[svcIndex - 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex - 1] }
+                                            serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
+                                            scope.launch {
+                                                app.container.priceRepository.reorderServices(cat.id, next)
+                                            }
+                                        }
+                                    },
+                                    onMoveDown = {
+                                        if (svcIndex < orderedServiceIds.lastIndex) {
+                                            val next = orderedServiceIds.toMutableList()
+                                            next[svcIndex + 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex + 1] }
+                                            serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
+                                            scope.launch {
+                                                app.container.priceRepository.reorderServices(cat.id, next)
+                                            }
+                                        }
+                                    },
+                                ),
+                        ) {
+                            Text(svc.name, color = HdTextPrimary)
+                            Text("${formatRubles(svc.priceKopecks)} / ${svc.unit}", color = HdTextSecondary)
+                            Row {
+                                Text("Изменить", color = HdTextPrimary, modifier = Modifier.clickable { editingService = svc })
+                                Text("  ·  Дубль", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    scope.launch {
+                                        app.container.priceRepository.upsertService(
+                                            svc.copy(id = 0, name = svc.name + " (копия)", sortOrder = svc.sortOrder + 1),
+                                        )
+                                    }
+                                })
+                                Text("  ·  ★", color = if (svc.isFavorite) HdOrange else HdTextSecondary, modifier = Modifier.clickable {
+                                    scope.launch { app.container.priceRepository.toggleFavorite(svc.id, !svc.isFavorite) }
+                                })
+                                Text("  ·  Архив", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    scope.launch { app.container.priceRepository.archiveService(svc.id) }
+                                })
+                            }
+                        }
+                    }
+                    HdSecondaryButton("+ Услуга в «${cat.name}»") {
+                        editingService = ServiceEntity(
+                            categoryId = cat.id,
+                            name = "",
+                            unit = "шт.",
+                            priceKopecks = 0,
+                            sortOrder = services.count { it.categoryId == cat.id },
+                        )
+                    }
+                    HdSecondaryButton("Скрыть категорию") {
+                        archiveCategoryTarget = cat
+                    }
+                }
             }
         }
     }
@@ -695,6 +817,49 @@ private fun PriceListScreen(nav: NavHostController) {
                     }
                 }
             },
+        )
+    }
+
+    editingCategory?.let { cat ->
+        var name by remember(cat.id) { mutableStateOf(cat.name) }
+        AlertDialog(
+            onDismissRequest = { editingCategory = null },
+            title = { Text("Категория") },
+            text = { HdTextField(name, { name = it }, "Название") },
+            confirmButton = {
+                HdPrimaryButton("Сохранить") {
+                    scope.launch {
+                        app.container.priceRepository.upsertCategory(cat.copy(name = name))
+                        editingCategory = null
+                    }
+                }
+            },
+        )
+    }
+
+    archiveCategoryTarget?.let { cat ->
+        AlertDialog(
+            onDismissRequest = { archiveCategoryTarget = null },
+            title = { Text("Скрыть категорию?") },
+            text = {
+                Text(
+                    "Категория «${cat.name}» и её услуги не будут показаны в прайсе и при добавлении из прайса. " +
+                        "Расчёты не изменятся.",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Скрыть") {
+                    scope.launch {
+                        services.filter { it.categoryId == cat.id }.forEach {
+                            app.container.priceRepository.archiveService(it.id)
+                        }
+                        app.container.priceRepository.archiveCategory(cat.id)
+                        archiveCategoryTarget = null
+                    }
+                }
+            },
+            dismissButton = { HdSecondaryButton("Отмена") { archiveCategoryTarget = null } },
         )
     }
 }
@@ -781,6 +946,12 @@ private fun SettingsScreen(nav: NavHostController) {
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Конфиденциальность") { nav.navigate(Routes.PRIVACY) }
         Spacer(Modifier.height(16.dp))
+        Text(
+            "Обновление приложения сохраняет прайс, шаблоны, сметы и настройки. " +
+                "Устанавливайте новую версию поверх старой, не удаляя приложение.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         HdTextField(backupPassword, { backupPassword = it }, "Пароль резервной копии")
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Экспорт резервной копии") {
@@ -805,7 +976,8 @@ private fun SettingsScreen(nav: NavHostController) {
             title = { Text("Импорт резервной копии") },
             text = {
                 Text(
-                    "Будет заменено: категорий ${preview.categories}, услуг ${preview.services}, расчётов ${preview.estimates}.",
+                    "Будет заменено: категорий ${preview.categories}, услуг ${preview.services}, " +
+                        "шаблонов ${preview.templates}, расчётов ${preview.estimates}.",
                     color = HdTextSecondary,
                 )
             },
@@ -1555,17 +1727,16 @@ private fun MainServicePickerPanel(
                         }
                         state.categories.forEach { cat ->
                             val count = state.servicesByCategory[cat.id]?.size ?: 0
-                            if (count > 0) {
-                                ServiceCategoryChip(
-                                    name = cat.name,
-                                    selected = activeCategoryId == cat.id,
-                                    onClick = {
-                                        activeCategoryId = cat.id
-                                        selectedServiceIds = emptySet()
-                                        step = ServicePickerStep.Services
-                                    },
-                                )
-                            }
+                            val label = if (count > 0) "${cat.name} ($count)" else cat.name
+                            ServiceCategoryChip(
+                                name = label,
+                                selected = activeCategoryId == cat.id,
+                                onClick = {
+                                    activeCategoryId = cat.id
+                                    selectedServiceIds = emptySet()
+                                    step = ServicePickerStep.Services
+                                },
+                            )
                         }
                     }
                 }

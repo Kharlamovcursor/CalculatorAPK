@@ -50,6 +50,25 @@ class PriceRepository(
 
     suspend fun getService(id: Long) = serviceDao.getById(id)
 
+    suspend fun reorderCategories(orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id ->
+            val category = categoryDao.getById(id) ?: return@forEachIndexed
+            if (category.sortOrder != index) {
+                categoryDao.update(category.copy(sortOrder = index))
+            }
+        }
+    }
+
+    suspend fun reorderServices(categoryId: Long, orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id ->
+            val service = serviceDao.getById(id) ?: return@forEachIndexed
+            if (service.categoryId != categoryId) return@forEachIndexed
+            if (service.sortOrder != index) {
+                serviceDao.update(service.copy(sortOrder = index))
+            }
+        }
+    }
+
     suspend fun resetToDefaults() {
         categoryDao.getActiveOnce().forEach { categoryDao.archive(it.id) }
         serviceDao.getActiveOnce().forEach { serviceDao.archive(it.id) }

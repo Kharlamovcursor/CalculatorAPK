@@ -67,4 +67,22 @@ interface TemplateDao {
 
     @Query("SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM estimate_templates")
     suspend fun nextTemplateSortOrder(): Int
+
+    @Query("SELECT * FROM estimate_templates")
+    suspend fun getAllTemplatesOnce(): List<EstimateTemplateEntity>
+
+    @Query("SELECT * FROM estimate_template_categories")
+    suspend fun getAllTemplateCategoriesOnce(): List<EstimateTemplateCategoryEntity>
+
+    @Query("SELECT * FROM estimate_template_lines")
+    suspend fun getAllTemplateLinesOnce(): List<EstimateTemplateLineEntity>
+
+    @Query("DELETE FROM estimate_template_lines")
+    suspend fun deleteAllLines()
+
+    @Query("DELETE FROM estimate_template_categories")
+    suspend fun deleteAllCategories()
+
+    @Query("DELETE FROM estimate_templates")
+    suspend fun deleteAllTemplates()
 }

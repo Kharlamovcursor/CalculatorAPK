@@ -31,6 +31,7 @@ class AppContainer(context: Context) {
         database.categoryDao(),
         database.serviceDao(),
         database.estimateDao(),
+        database.templateDao(),
         settingsRepository,
     )
 
