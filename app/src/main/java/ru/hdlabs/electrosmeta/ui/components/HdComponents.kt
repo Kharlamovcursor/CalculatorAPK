@@ -2,6 +2,7 @@ package ru.hdlabs.electrosmeta.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -117,7 +118,11 @@ fun HdPrimaryButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled) 0.96f else 1f, label = "btnScale")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.9f else 1f,
+        animationSpec = tween(90),
+        label = "btnScale",
+    )
     Button(
         onClick = onClick,
         enabled = enabled,
@@ -126,13 +131,14 @@ fun HdPrimaryButton(
         shape = RoundedCornerShape(14.dp),
         contentPadding = PaddingValues(vertical = 14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.Transparent,
+            containerColor = if (pressed && enabled) HdOrange.copy(alpha = 0.22f) else Color.Transparent,
             disabledContainerColor = HdPanel,
         ),
-        border = BorderStroke(
-            1.5.dp,
-            Brush.horizontalGradient(listOf(HdBlue, HdOrange)),
-        ),
+        border = if (pressed && enabled) {
+            BorderStroke(2.5.dp, HdOrange)
+        } else {
+            BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(HdBlue, HdOrange)))
+        },
     ) {
         Text(text, color = HdTextPrimary)
     }
@@ -147,15 +153,24 @@ fun HdSecondaryButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed && enabled) 0.96f else 1f, label = "btnScaleSec")
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.9f else 1f,
+        animationSpec = tween(90),
+        label = "btnScaleSec",
+    )
     Button(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interactionSource,
         modifier = modifier.fillMaxWidth().scale(scale),
         shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = HdPanel),
-        border = BorderStroke(1.dp, HdBlue.copy(alpha = 0.4f)),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (pressed && enabled) HdOrange.copy(alpha = 0.35f) else HdPanel,
+        ),
+        border = BorderStroke(
+            if (pressed && enabled) 2.5.dp else 1.dp,
+            if (pressed && enabled) HdOrange else HdBlue.copy(alpha = 0.4f),
+        ),
     ) {
         Text(text, color = HdTextPrimary)
     }

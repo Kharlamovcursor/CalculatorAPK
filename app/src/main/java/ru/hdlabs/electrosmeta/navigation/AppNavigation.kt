@@ -200,10 +200,6 @@ private fun HdScaffold(
 
 @Composable
 private fun HomeScreen(nav: NavHostController) {
-    val app = LocalContext.current.applicationContext as ElectrosmetaApplication
-    val scope = rememberCoroutineScope()
-    var showNewEstimateOptions by remember { mutableStateOf(false) }
-
     HdScaffold(title = "", scroll = false, showTopBar = false) {
         Column(
             Modifier
@@ -224,48 +220,13 @@ private fun HomeScreen(nav: NavHostController) {
                         .padding(bottom = 20.dp),
                     contentScale = ContentScale.Fit,
                 )
-                HdPrimaryButton(
-                    text = if (showNewEstimateOptions) "Скрыть варианты" else "Новый расчёт",
-                    onClick = { showNewEstimateOptions = !showNewEstimateOptions },
-                )
-                AnimatedVisibility(
-                    visible = showNewEstimateOptions,
-                    enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(240)),
-                    exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(tween(200)),
-                ) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        HdPrimaryButton("Основной расчёт") {
-                            showNewEstimateOptions = false
-                            scope.launch {
-                                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                                val id = app.container.estimateRepository.createDraft(EstimateType.MAIN, tax)
-                                nav.navigate(Routes.estimate(id))
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        HdSecondaryButton("Быстрый расчёт") {
-                            showNewEstimateOptions = false
-                            scope.launch {
-                                val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
-                                val id = app.container.estimateRepository.createDraft(EstimateType.QUICK, tax)
-                                nav.navigate(Routes.estimate(id))
-                            }
-                        }
-                    }
-                }
-                if (!showNewEstimateOptions) {
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
-                }
+                HdPrimaryButton("Новый расчёт") { nav.navigate(Routes.NEW_TYPE) }
+                Spacer(Modifier.height(12.dp))
+                HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
+                Spacer(Modifier.height(12.dp))
+                HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
+                Spacer(Modifier.height(12.dp))
+                HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
             }
             Spacer(Modifier.weight(1f))
             Text(
@@ -551,6 +512,9 @@ private fun SettingsScreen(nav: NavHostController) {
         }
     }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(Modifier.fillMaxSize()) {
     HdScaffold(title = "Настройки", onBack = { nav.popBackStack() }) {
         Text("Анимация фона", color = HdTextPrimary)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -615,6 +579,23 @@ private fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(16.dp))
         HdSecondaryButton("Удалить все расчёты") { confirmClear = true }
+        Spacer(Modifier.height(24.dp))
+        UpdateCheckSection(snackbarHostState)
+    }
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(16.dp),
+        snackbar = { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = HdPanelElevated,
+                contentColor = HdTextPrimary,
+                actionColor = HdOrange,
+            )
+        },
+    )
     }
 
     importPreview?.let { preview ->
@@ -683,8 +664,6 @@ private fun AboutScreen(nav: NavHostController) {
     var pdfTitle by remember(settings) { mutableStateOf(settings.pdfTitle) }
     var pdfIntro by remember(settings) { mutableStateOf(settings.pdfIntro) }
     var pdfFooter by remember(settings) { mutableStateOf(settings.pdfFooter) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var updateMessage by remember { mutableStateOf("") }
 
     HdScaffold(title = "О приложении", onBack = { nav.popBackStack() }) {
         HdTextField(company, { company = it }, "Название / мастер")
@@ -717,48 +696,77 @@ private fun AboutScreen(nav: NavHostController) {
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
-        HdSecondaryButton("Проверить обновления") {
-            scope.launch {
-                updateMessage = "Проверка…"
-                updateInfo = null
-                if (!ReleaseUpdateConfig.isConfigured()) {
-                    updateMessage = "Репозиторий обновлений не настроен в сборке приложения"
-                    return@launch
-                }
+    }
+}
+
+@Composable
+private fun UpdateCheckSection(snackbarHostState: SnackbarHostState) {
+    val context = LocalContext.current
+    val app = context.applicationContext as ElectrosmetaApplication
+    val scope = rememberCoroutineScope()
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var checking by remember { mutableStateOf(false) }
+
+    HdSecondaryButton(
+        text = if (checking) "Проверка…" else "Проверить обновления",
+        enabled = !checking,
+    ) {
+        scope.launch {
+            checking = true
+            updateInfo = null
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val progress = launch {
+                snackbarHostState.showSnackbar(
+                    message = "Проверяю обновления…",
+                    duration = SnackbarDuration.Indefinite,
+                )
+            }
+            val message = if (!ReleaseUpdateConfig.isConfigured()) {
+                "Репозиторий обновлений не настроен в сборке приложения"
+            } else {
                 try {
                     val source = app.container.updateSource(
                         ReleaseUpdateConfig.githubOwner,
                         ReleaseUpdateConfig.githubRepo,
                     )
-                    updateInfo = withContext(Dispatchers.IO) {
+                    val info = withContext(Dispatchers.IO) {
                         source.checkForUpdate(BuildConfig.VERSION_CODE)
                     }
-                    updateMessage = if (updateInfo == null) {
-                        "У вас актуальная версия ${BuildConfig.VERSION_NAME}. " +
-                            "Или в Releases нет APK новее текущей."
+                    updateInfo = info
+                    if (info == null) {
+                        "У вас актуальная версия ${BuildConfig.VERSION_NAME}"
                     } else {
-                        "Доступно: ${updateInfo?.versionName}"
+                        "Доступно обновление ${info.versionName}"
                     }
                 } catch (e: Exception) {
                     updateInfo = null
-                    updateMessage = e.message ?: "Не удалось проверить обновления"
+                    e.message ?: "Не удалось проверить обновления"
                 }
             }
+            checking = false
+            progress.cancel()
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(message)
         }
-        if (updateMessage.isNotBlank()) Text(updateMessage, color = HdTextSecondary)
-        updateInfo?.let { info ->
-            Spacer(Modifier.height(8.dp))
-            HdPrimaryButton("Скачать ${info.versionName}") {
-                scope.launch(Dispatchers.IO) {
-                    val file = File(context.cacheDir, info.apkFileName)
-                    ApkDownloadHelper.download(info.apkUrl, file)
-                    val hash = ApkDownloadHelper.sha256(file)
-                    withContext(Dispatchers.Main) {
-                        updateMessage = "SHA-256: $hash"
-                        InstallHelper.promptInstall(context, file)
-                    }
+    }
+    updateInfo?.let { info ->
+        Spacer(Modifier.height(8.dp))
+        HdPrimaryButton("Скачать ${info.versionName}") {
+            scope.launch {
+                val progress = launch {
+                    snackbarHostState.showSnackbar(
+                        message = "Скачивание ${info.versionName}…",
+                        duration = SnackbarDuration.Indefinite,
+                    )
                 }
+                val file = withContext(Dispatchers.IO) {
+                    val target = File(context.cacheDir, info.apkFileName)
+                    ApkDownloadHelper.download(info.apkUrl, target)
+                    target
+                }
+                progress.cancel()
+                snackbarHostState.currentSnackbarData?.dismiss()
+                InstallHelper.promptInstall(context, file)
             }
         }
     }

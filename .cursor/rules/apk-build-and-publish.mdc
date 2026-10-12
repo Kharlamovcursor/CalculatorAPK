@@ -19,6 +19,8 @@ alwaysApply: true
 
 1. Проверь, что `app\release\app-release.apk` новый и `versionCode` в нём совпадает с `app/build.gradle.kts`.
 2. Закоммить изменения приложения и запушь в Git.
-3. Опубликуй GitHub Release: тег `v{versionCode}`, вложение `app\release\app-release.apk`.
+3. Опубликуй GitHub Release: тег `v{versionCode}`, название `1.0.{versionCode}`, вложение `app\release\app-release.apk`.
+
+`versionName` всегда равен `1.0.` + `versionCode`. Пример: код 8 → версия `1.0.8` → тег `v8`. Не расходи имя и код.
 
 Не публикуй, пока пользователь сам не подтвердил сборку.

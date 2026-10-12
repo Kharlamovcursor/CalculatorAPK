@@ -68,11 +68,17 @@ class GitHubUpdateSource(
         val remoteCode = parseVersionCode(release.tagName)
         if (remoteCode <= currentVersionCode) return null
         return UpdateInfo(
-            versionName = release.tagName,
+            versionName = displayVersion(release.tagName, remoteCode),
             changelog = release.body ?: "",
             apkUrl = apk.downloadUrl,
             apkFileName = apk.name,
         )
+    }
+
+    private fun displayVersion(tag: String, versionCode: Int): String {
+        val stripped = tag.trim().removePrefix("v").removePrefix("V")
+        if (stripped.toIntOrNull() != null) return "1.0.$versionCode"
+        return tag
     }
 
     private fun parseVersionCode(tag: String): Int {
