@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -28,7 +29,34 @@ import ru.hdlabs.electrosmeta.ui.theme.HdOrange
 import kotlin.math.sin
 import kotlin.random.Random
 
-private data class Star(val x: Float, val y: Float, val radius: Float, val layer: Int)
+private data class Star(
+    val dirX: Float,
+    val dirY: Float,
+    val depthOffset: Float,
+    val speed: Float,
+    val radius: Float,
+    val alpha: Float,
+    val twinkleSpeed: Float,
+    val twinkleOffset: Float,
+)
+
+private data class ShootingStar(
+    val startX: Float,
+    val startY: Float,
+    val vx: Float,
+    val vy: Float,
+    val offset: Float,
+    val speed: Float,
+    val trail: Float,
+)
+
+private data class DistantPulsar(
+    val x: Float,
+    val y: Float,
+    val tint: Color,
+    val speed: Float,
+    val offset: Float,
+)
 
 @Composable
 fun SpaceBackground(modifier: Modifier = Modifier) {
@@ -52,17 +80,58 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
     val animEnabled = settings.animationEnabled &&
         !reduceMotion &&
         lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-    val speedFactor = settings.animationSpeedPercent / 100f
+    val speedFactor = (settings.animationSpeedPercent / 100f).coerceAtLeast(0.1f)
     val powerSave = settings.powerSaveMode
-    val starCount = if (powerSave) 60 else 140
+    val starCount = if (powerSave) 160 else 380
+    val pulsarCount = if (powerSave) 3 else 6
+    val meteorCount = if (powerSave) 2 else 4
 
     val stars = remember(starCount) {
+        val random = Random(42)
         List(starCount) {
+            var dirX = random.nextFloat() * 2f - 1f
+            var dirY = random.nextFloat() * 2f - 1f
+            if (dirX * dirX + dirY * dirY < 0.06f) {
+                dirX = if (dirX >= 0f) 0.4f else -0.4f
+                dirY = if (dirY >= 0f) 0.4f else -0.4f
+            }
+            val bright = random.nextFloat() > 0.82f
             Star(
-                x = Random.nextFloat(),
-                y = Random.nextFloat(),
-                radius = Random.nextFloat() * 2f + 0.5f,
-                layer = Random.nextInt(3),
+                dirX = dirX,
+                dirY = dirY,
+                depthOffset = random.nextFloat(),
+                speed = if (random.nextFloat() > 0.55f) 1f else 2f,
+                radius = if (bright) random.nextFloat() * 0.7f + 1.15f else random.nextFloat() * 0.7f + 0.4f,
+                alpha = if (bright) random.nextFloat() * 0.12f + 0.88f else random.nextFloat() * 0.25f + 0.58f,
+                twinkleSpeed = (random.nextInt(3) + 1).toFloat(),
+                twinkleOffset = random.nextFloat(),
+            )
+        }
+    }
+    val meteors = remember(meteorCount) {
+        val random = Random(11)
+        List(meteorCount) {
+            val leftward = random.nextBoolean()
+            ShootingStar(
+                startX = if (leftward) random.nextFloat() * 0.35f + 0.55f else random.nextFloat() * 0.35f + 0.05f,
+                startY = random.nextFloat() * 0.25f,
+                vx = if (leftward) -(random.nextFloat() * 0.22f + 0.28f) else random.nextFloat() * 0.22f + 0.28f,
+                vy = random.nextFloat() * 0.18f + 0.34f,
+                offset = random.nextFloat(),
+                speed = 1f,
+                trail = random.nextFloat() * 0.05f + 0.07f,
+            )
+        }
+    }
+    val pulsars = remember(pulsarCount) {
+        val random = Random(7)
+        List(pulsarCount) { index ->
+            DistantPulsar(
+                x = random.nextFloat() * 0.86f + 0.07f,
+                y = random.nextFloat() * 0.72f + 0.06f,
+                tint = if (index % 2 == 0) HdBlue else HdOrange,
+                speed = if (index % 2 == 0) 3f else 2f,
+                offset = random.nextFloat(),
             )
         }
     }
@@ -74,7 +143,7 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
             targetValue = 1f,
             animationSpec = infiniteRepeatable(
                 animation = tween(
-                    durationMillis = (24000 / speedFactor.coerceAtLeast(0.1f)).toInt(),
+                    durationMillis = (28000 / speedFactor).toInt(),
                     easing = LinearEasing,
                 ),
                 repeatMode = RepeatMode.Restart,
@@ -87,55 +156,108 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
 
     Canvas(modifier = modifier.fillMaxSize()) {
         drawRect(HdBlack)
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(HdBlue.copy(alpha = 0.08f), Color.Transparent),
-                center = Offset(size.width * 0.2f, size.height * 0.15f),
-                radius = size.width * 0.7f,
-            ),
-        )
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(HdOrange.copy(alpha = 0.06f), Color.Transparent),
-                center = Offset(size.width * 0.85f, size.height * 0.75f),
-                radius = size.width * 0.55f,
-            ),
-        )
+        drawRect(Color(0xFF070B16))
 
+        val vanishX = size.width * 0.5f
+        val vanishY = size.height * 0.46f
         stars.forEach { star ->
-            val drift = (star.layer + 1) * 0.02f * speedFactor
-            val y = (star.y + phase * drift) % 1f
-            val alpha = when (star.layer) {
-                0 -> 0.35f
-                1 -> 0.55f
-                else -> 0.85f
+            val travel = if (animEnabled) {
+                ((phase * star.speed + star.depthOffset) % 1f + 1f) % 1f
+            } else {
+                0.28f + star.depthOffset * 0.45f
+            }
+            val depth = 0.06f + travel * travel * 0.94f
+            val life = if (animEnabled) {
+                val fadeIn = (travel / 0.12f).coerceIn(0f, 1f)
+                val fadeOut = ((1f - travel) / 0.14f).coerceIn(0f, 1f)
+                fadeIn * fadeOut
+            } else {
+                1f
+            }
+            val twinkle = if (animEnabled) {
+                val wave = sin((phase * star.twinkleSpeed + star.twinkleOffset) * 6.28318f)
+                (0.62f + 0.38f * wave).coerceIn(0.35f, 1f)
+            } else {
+                1f
             }
             drawCircle(
-                color = Color.White.copy(alpha = alpha),
-                radius = star.radius,
-                center = Offset(star.x * size.width, y * size.height),
+                color = Color.White.copy(alpha = (star.alpha * (0.35f + depth * 0.65f) * twinkle * life).coerceIn(0f, 1f)),
+                radius = star.radius * (0.35f + depth * 1.35f),
+                center = Offset(
+                    vanishX + star.dirX * size.width * 0.62f * depth,
+                    vanishY + star.dirY * size.height * 0.62f * depth,
+                ),
             )
         }
 
-        if (animEnabled && !powerSave) {
-            val pulsarAlpha = 0.15f + 0.1f * sin(phase * 6.28f).toFloat()
+        if (animEnabled) {
+            meteors.forEach { meteor ->
+                val local = ((phase * meteor.speed + meteor.offset) % 1f + 1f) % 1f
+                if (local < 0.16f) {
+                    val t = local / 0.16f
+                    val head = Offset(
+                        (meteor.startX + meteor.vx * t) * size.width,
+                        (meteor.startY + meteor.vy * t) * size.height,
+                    )
+                    val tail = Offset(
+                        head.x - meteor.vx * meteor.trail * size.width,
+                        head.y - meteor.vy * meteor.trail * size.height,
+                    )
+                    val fade = if (t < 0.15f) t / 0.15f else (1f - t)
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.75f * fade),
+                            ),
+                            start = tail,
+                            end = head,
+                        ),
+                        start = tail,
+                        end = head,
+                        strokeWidth = 1.6f,
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = fade.coerceIn(0f, 1f)),
+                        radius = 2.1f,
+                        center = head,
+                    )
+                }
+            }
+        }
+
+        pulsars.forEach { pulsar ->
+            val center = Offset(pulsar.x * size.width, pulsar.y * size.height)
+            val wave = if (animEnabled) {
+                sin((phase * pulsar.speed + pulsar.offset) * 6.28318f)
+            } else {
+                0f
+            }
+            val raised = (0.5f + 0.5f * wave).coerceIn(0f, 1f)
+            val flash = raised * raised * raised
             drawCircle(
-                color = HdBlue.copy(alpha = pulsarAlpha),
-                radius = size.minDimension * 0.12f,
-                center = Offset(size.width * 0.12f, size.height * 0.35f),
+                color = pulsar.tint.copy(alpha = 0.34f * flash),
+                radius = 4f + 8f * flash,
+                center = center,
             )
             drawCircle(
-                color = HdOrange.copy(alpha = pulsarAlpha * 0.9f),
-                radius = size.minDimension * 0.08f,
-                center = Offset(size.width * 0.88f, size.height * 0.22f),
+                color = Color.White.copy(alpha = 0.12f + 0.88f * flash),
+                radius = 1.1f + 0.9f * flash,
+                center = center,
             )
-            val streakY = (phase * 1.2f) % 1f
-            drawLine(
-                color = HdBlue.copy(alpha = 0.35f),
-                start = Offset(size.width * 0.1f, streakY * size.height),
-                end = Offset(size.width * 0.35f, (streakY + 0.05f) * size.height),
-                strokeWidth = 2f,
-            )
+            if (animEnabled && !powerSave) {
+                val ring = ((phase * pulsar.speed + pulsar.offset) % 1f + 1f) % 1f
+                if (ring < 0.28f) {
+                    val t = ring / 0.28f
+                    val burst = if (t < 0.18f) t / 0.18f else 1f - (t - 0.18f) / 0.82f
+                    drawCircle(
+                        color = pulsar.tint.copy(alpha = burst.coerceIn(0f, 1f) * 0.7f),
+                        radius = 2.5f + t * 16f,
+                        center = center,
+                        style = Stroke(width = 1.3f),
+                    )
+                }
+            }
         }
     }
 }

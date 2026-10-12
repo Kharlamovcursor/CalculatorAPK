@@ -512,9 +512,6 @@ private fun SettingsScreen(nav: NavHostController) {
         }
     }
 
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    Box(Modifier.fillMaxSize()) {
     HdScaffold(title = "Настройки", onBack = { nav.popBackStack() }) {
         Text("Анимация фона", color = HdTextPrimary)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -580,22 +577,7 @@ private fun SettingsScreen(nav: NavHostController) {
         Spacer(Modifier.height(16.dp))
         HdSecondaryButton("Удалить все расчёты") { confirmClear = true }
         Spacer(Modifier.height(24.dp))
-        UpdateCheckSection(snackbarHostState)
-    }
-    SnackbarHost(
-        hostState = snackbarHostState,
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(16.dp),
-        snackbar = { data ->
-            Snackbar(
-                snackbarData = data,
-                containerColor = HdPanelElevated,
-                contentColor = HdTextPrimary,
-                actionColor = HdOrange,
-            )
-        },
-    )
+        UpdateCheckSection()
     }
 
     importPreview?.let { preview ->
@@ -700,12 +682,14 @@ private fun AboutScreen(nav: NavHostController) {
 }
 
 @Composable
-private fun UpdateCheckSection(snackbarHostState: SnackbarHostState) {
+private fun UpdateCheckSection() {
     val context = LocalContext.current
     val app = context.applicationContext as ElectrosmetaApplication
     val scope = rememberCoroutineScope()
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var checking by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf("") }
+    var showResult by remember { mutableStateOf(false) }
 
     HdSecondaryButton(
         text = if (checking) "Проверка…" else "Проверить обновления",
@@ -713,14 +697,9 @@ private fun UpdateCheckSection(snackbarHostState: SnackbarHostState) {
     ) {
         scope.launch {
             checking = true
+            showResult = false
             updateInfo = null
-            snackbarHostState.currentSnackbarData?.dismiss()
-            val progress = launch {
-                snackbarHostState.showSnackbar(
-                    message = "Проверяю обновления…",
-                    duration = SnackbarDuration.Indefinite,
-                )
-            }
+            statusMessage = "Проверяю обновления…"
             val message = if (!ReleaseUpdateConfig.isConfigured()) {
                 "Репозиторий обновлений не настроен в сборке приложения"
             } else {
@@ -743,32 +722,67 @@ private fun UpdateCheckSection(snackbarHostState: SnackbarHostState) {
                     e.message ?: "Не удалось проверить обновления"
                 }
             }
+            statusMessage = message
             checking = false
-            progress.cancel()
-            snackbarHostState.currentSnackbarData?.dismiss()
-            snackbarHostState.showSnackbar(message)
+            showResult = true
         }
+    }
+    if (statusMessage.isNotBlank()) {
+        Text(
+            statusMessage,
+            color = HdOrange,
+            modifier = Modifier.padding(top = 8.dp),
+        )
     }
     updateInfo?.let { info ->
         Spacer(Modifier.height(8.dp))
         HdPrimaryButton("Скачать ${info.versionName}") {
             scope.launch {
-                val progress = launch {
-                    snackbarHostState.showSnackbar(
-                        message = "Скачивание ${info.versionName}…",
-                        duration = SnackbarDuration.Indefinite,
-                    )
+                statusMessage = "Скачивание ${info.versionName}…"
+                try {
+                    val file = withContext(Dispatchers.IO) {
+                        val target = File(context.cacheDir, info.apkFileName)
+                        ApkDownloadHelper.download(info.apkUrl, target)
+                        target
+                    }
+                    InstallHelper.promptInstall(context, file)
+                } catch (e: Exception) {
+                    statusMessage = e.message ?: "Не удалось скачать обновление"
+                    showResult = true
                 }
-                val file = withContext(Dispatchers.IO) {
-                    val target = File(context.cacheDir, info.apkFileName)
-                    ApkDownloadHelper.download(info.apkUrl, target)
-                    target
-                }
-                progress.cancel()
-                snackbarHostState.currentSnackbarData?.dismiss()
-                InstallHelper.promptInstall(context, file)
             }
         }
+    }
+    if (showResult) {
+        AlertDialog(
+            onDismissRequest = { showResult = false },
+            title = { Text("Обновление") },
+            text = { Text(statusMessage, color = HdTextSecondary) },
+            confirmButton = {
+                val info = updateInfo
+                if (info != null) {
+                    HdPrimaryButton("Скачать ${info.versionName}") {
+                        showResult = false
+                        scope.launch {
+                            statusMessage = "Скачивание ${info.versionName}…"
+                            try {
+                                val file = withContext(Dispatchers.IO) {
+                                    val target = File(context.cacheDir, info.apkFileName)
+                                    ApkDownloadHelper.download(info.apkUrl, target)
+                                    target
+                                }
+                                InstallHelper.promptInstall(context, file)
+                            } catch (e: Exception) {
+                                statusMessage = e.message ?: "Не удалось скачать обновление"
+                                showResult = true
+                            }
+                        }
+                    }
+                } else {
+                    HdPrimaryButton("Понятно") { showResult = false }
+                }
+            },
+        )
     }
 }
 
