@@ -126,7 +126,9 @@ import ru.hdlabs.electrosmeta.feature.template.TemplateEditorUiState
 import ru.hdlabs.electrosmeta.feature.template.TemplateEditorViewModel
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
 import ru.hdlabs.electrosmeta.ui.components.ReorderDragHandle
-import ru.hdlabs.electrosmeta.ui.components.reorderOnLongPressDrag
+import ru.hdlabs.electrosmeta.ui.components.HdReorderableState
+import ru.hdlabs.electrosmeta.ui.components.hdReorderableItem
+import ru.hdlabs.electrosmeta.ui.components.rememberHdReorderableState
 import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
 import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 import ru.hdlabs.electrosmeta.update.UpdateInfo
@@ -144,6 +146,7 @@ import ru.hdlabs.electrosmeta.ui.components.HdUnitChoiceRow
 import ru.hdlabs.electrosmeta.ui.components.HdSecondaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdDialogFieldColumn
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
+import ru.hdlabs.electrosmeta.ui.components.HdThumbFriendlyBody
 import androidx.compose.foundation.background
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
 import ru.hdlabs.electrosmeta.ui.theme.HdPanel
@@ -263,18 +266,24 @@ private fun HdScaffold(
 
 @Composable
 private fun HomeScreen(nav: NavHostController) {
-    HdScaffold(title = "", scroll = true, showTopBar = false) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    HdScaffold(title = "", scroll = false, showTopBar = false) {
+        HdThumbFriendlyBody(
+            footer = {
+                Text(
+                    "Версия ${BuildConfig.VERSION_NAME}",
+                    color = HdTextSecondary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    textAlign = TextAlign.Center,
+                )
+            },
         ) {
             Image(
                 painter = painterResource(R.drawable.calc_home_logo),
                 contentDescription = "Calc by HDLabs",
                 modifier = Modifier
-                    .fillMaxWidth(0.58f)
+                    .fillMaxWidth(0.72f)
                     .padding(bottom = 12.dp),
                 contentScale = ContentScale.Fit,
             )
@@ -285,12 +294,6 @@ private fun HomeScreen(nav: NavHostController) {
             HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
             Spacer(Modifier.height(12.dp))
             HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "Версия ${BuildConfig.VERSION_NAME}",
-                color = HdTextSecondary,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
         }
     }
 }
@@ -308,8 +311,10 @@ private fun EstimateHubScreen(nav: NavHostController) {
     }
     val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
     var deleteTemplateTarget by remember { mutableStateOf<EstimateTemplateEntity?>(null) }
+    val templateReorderState = rememberHdReorderableState()
 
-    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = true) {
+    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = false) {
+        HdThumbFriendlyBody {
                 HdPrimaryButton("Новый расчёт") {
                     scope.launch {
                         val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
@@ -328,7 +333,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                 if (orderedTemplates.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Порядок: удерживайте ⋮⋮ слева и тяните вверх или вниз.",
+                        "Порядок: удерживайте ⋮⋮ справа и перетаскивайте между пунктами.",
                         color = HdTextSecondary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
@@ -339,6 +344,16 @@ private fun EstimateHubScreen(nav: NavHostController) {
                 orderedTemplates.forEachIndexed { index, template ->
                     TemplateHubRow(
                         template = template,
+                        reorderState = templateReorderState,
+                        index = index,
+                        itemCount = orderedTemplates.size,
+                        onMove = { from, to ->
+                            val next = orderedIds.toMutableList()
+                            val id = next.removeAt(from)
+                            next.add(to, id)
+                            orderedIds = next
+                            scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                        },
                         onOpenEstimate = {
                             scope.launch {
                                 val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
@@ -350,24 +365,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                         },
                         onEdit = { nav.navigate(Routes.templateEdit(template.id)) },
                         onDelete = { deleteTemplateTarget = template },
-                        onMoveUp = {
-                            if (index > 0) {
-                                val next = orderedIds.toMutableList()
-                                next[index - 1] = next[index].also { next[index] = next[index - 1] }
-                                orderedIds = next
-                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                            }
-                        },
-                        onMoveDown = {
-                            if (index < orderedIds.lastIndex) {
-                                val next = orderedIds.toMutableList()
-                                next[index + 1] = next[index].also { next[index] = next[index + 1] }
-                                orderedIds = next
-                                scope.launch { app.container.templateRepository.reorderTemplates(next) }
-                            }
-                        },
                     )
-                    Spacer(Modifier.height(10.dp))
                 }
                 HdSecondaryButton("Добавить шаблон") {
                     scope.launch {
@@ -382,6 +380,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
+        }
     }
 
     deleteTemplateTarget?.let { target ->
@@ -422,8 +421,10 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val motion = LocalHdMotion.current
     val template = state.template
+    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
+    val templateLineReorderState = rememberHdReorderableState()
     var showDeleteTemplateConfirm by remember { mutableStateOf(false) }
     var showServicePicker by remember { mutableStateOf(false) }
     var showCustomLineForm by remember { mutableStateOf(false) }
@@ -508,7 +509,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     },
                 )
             }
-            groups.forEach { group ->
+            groups.forEachIndexed { index, group ->
                 MainCategoryLinesSection(
                     group = group,
                     expanded = expandedKeys.contains(group.categoryKey),
@@ -525,25 +526,24 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     onUpdateLine = { line -> vm.updateLine(line.toTemplateLine(templateId, group.categoryKey)) },
                     onUpdateFailed = {},
                     onDeleteLine = { vm.deleteLine(it) },
-                    onReorderMoveUp = {
+                    reorderState = templateLineReorderState,
+                    reorderIndex = index,
+                    reorderItemCount = groups.size,
+                    onReorder = { from, to ->
                         val keys = categoryOrder.toMutableList()
-                        val pos = keys.indexOf(group.categoryKey)
-                        if (pos > 0) {
-                            keys[pos - 1] = keys[pos].also { keys[pos] = keys[pos - 1] }
-                            categoryOrder = keys
-                            vm.reorderCategories(keys)
-                        }
-                    },
-                    onReorderMoveDown = {
-                        val keys = categoryOrder.toMutableList()
-                        val pos = keys.indexOf(group.categoryKey)
-                        if (pos >= 0 && pos < keys.lastIndex) {
-                            keys[pos + 1] = keys[pos].also { keys[pos] = keys[pos + 1] }
-                            categoryOrder = keys
-                            vm.reorderCategories(keys)
-                        }
+                        val key = keys.removeAt(from)
+                        keys.add(to, key)
+                        categoryOrder = keys
+                        vm.reorderCategories(keys)
                     },
                 )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        HdSecondaryButton("Добавить шаблон") {
+            scope.launch {
+                val id = app.container.templateRepository.createTemplate("", EstimateType.MAIN)
+                nav.navigate(Routes.templateEdit(id))
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -589,18 +589,22 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
 @Composable
 private fun TemplateHubRow(
     template: EstimateTemplateEntity,
+    reorderState: HdReorderableState,
+    index: Int,
+    itemCount: Int,
+    onMove: (from: Int, to: Int) -> Unit,
     onOpenEstimate: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
 ) {
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .hdReorderableItem(reorderState, index, itemCount, onMove),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ReorderDragHandle(onMoveUp = onMoveUp, onMoveDown = onMoveDown)
         Row(
             Modifier
                 .weight(1f)
@@ -629,6 +633,12 @@ private fun TemplateHubRow(
                 Icon(Icons.Default.Delete, contentDescription = "Удалить шаблон", tint = HdTextSecondary)
             }
         }
+        ReorderDragHandle(
+            state = reorderState,
+            index = index,
+            itemCount = itemCount,
+            onMove = onMove,
+        )
     }
 }
 
@@ -836,9 +846,11 @@ private fun PriceListScreen(nav: NavHostController) {
         serviceOrderByCategory = next
     }
 
+    val categoryReorderState = rememberHdReorderableState()
+
     HdScaffold(title = "Прайс-лист", onBack = { nav.popBackStack() }) {
         Text(
-            "Порядок: удерживайте ⋮⋮ слева от строки и тяните вверх или вниз. Нажмите на категорию, чтобы развернуть.",
+            "Порядок: удерживайте ⋮⋮ справа и перетаскивайте между пунктами. Нажмите на категорию, чтобы развернуть.",
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -862,27 +874,21 @@ private fun PriceListScreen(nav: NavHostController) {
                 }
             }
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier
+                    .fillMaxWidth()
+                    .hdReorderableItem(
+                        categoryReorderState,
+                        catIndex,
+                        orderedCategoryIds.size,
+                    ) { from, to ->
+                        val next = orderedCategoryIds.toMutableList()
+                        val id = next.removeAt(from)
+                        next.add(to, id)
+                        orderedCategoryIds = next
+                        scope.launch { app.container.priceRepository.reorderCategories(next) }
+                    },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ReorderDragHandle(
-                    onMoveUp = {
-                        if (catIndex > 0) {
-                            val next = orderedCategoryIds.toMutableList()
-                            next[catIndex - 1] = next[catIndex].also { next[catIndex] = next[catIndex - 1] }
-                            orderedCategoryIds = next
-                            scope.launch { app.container.priceRepository.reorderCategories(next) }
-                        }
-                    },
-                    onMoveDown = {
-                        if (catIndex < orderedCategoryIds.lastIndex) {
-                            val next = orderedCategoryIds.toMutableList()
-                            next[catIndex + 1] = next[catIndex].also { next[catIndex] = next[catIndex + 1] }
-                            orderedCategoryIds = next
-                            scope.launch { app.container.priceRepository.reorderCategories(next) }
-                        }
-                    },
-                )
                 Row(
                     Modifier
                         .weight(1f)
@@ -915,7 +921,20 @@ private fun PriceListScreen(nav: NavHostController) {
                     modifier = Modifier.clickable(onClick = toggleExpand),
                 )
                 }
+                ReorderDragHandle(
+                    state = categoryReorderState,
+                    index = catIndex,
+                    itemCount = orderedCategoryIds.size,
+                    onMove = { from, to ->
+                        val next = orderedCategoryIds.toMutableList()
+                        val movedId = next.removeAt(from)
+                        next.add(to, movedId)
+                        orderedCategoryIds = next
+                        scope.launch { app.container.priceRepository.reorderCategories(next) }
+                    },
+                )
             }
+            val serviceReorderState = remember(cat.id) { HdReorderableState() }
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(240)),
@@ -923,32 +942,27 @@ private fun PriceListScreen(nav: NavHostController) {
             ) {
                 Column {
                     orderedServices.forEachIndexed { svcIndex, svc ->
+                        val onServiceMove: (Int, Int) -> Unit = { from, to ->
+                            val next = orderedServiceIds.toMutableList()
+                            val movedId = next.removeAt(from)
+                            next.add(to, movedId)
+                            serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
+                            scope.launch {
+                                app.container.priceRepository.reorderServices(cat.id, next)
+                            }
+                        }
                         Row(
-                            Modifier.padding(top = 6.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp)
+                                .hdReorderableItem(
+                                    serviceReorderState,
+                                    svcIndex,
+                                    orderedServices.size,
+                                    onServiceMove,
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ReorderDragHandle(
-                                onMoveUp = {
-                                    if (svcIndex > 0) {
-                                        val next = orderedServiceIds.toMutableList()
-                                        next[svcIndex - 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex - 1] }
-                                        serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
-                                        scope.launch {
-                                            app.container.priceRepository.reorderServices(cat.id, next)
-                                        }
-                                    }
-                                },
-                                onMoveDown = {
-                                    if (svcIndex < orderedServiceIds.lastIndex) {
-                                        val next = orderedServiceIds.toMutableList()
-                                        next[svcIndex + 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex + 1] }
-                                        serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
-                                        scope.launch {
-                                            app.container.priceRepository.reorderServices(cat.id, next)
-                                        }
-                                    }
-                                },
-                            )
                             HdCard(Modifier.weight(1f)) {
                             Text(svc.name, color = HdTextPrimary)
                             Text("${formatRubles(svc.priceKopecks)} / ${svc.unit}", color = HdTextSecondary)
@@ -969,6 +983,12 @@ private fun PriceListScreen(nav: NavHostController) {
                                 })
                             }
                             }
+                            ReorderDragHandle(
+                                state = serviceReorderState,
+                                index = svcIndex,
+                                itemCount = orderedServices.size,
+                                onMove = onServiceMove,
+                            )
                         }
                     }
                     HdSecondaryButton("+ Услуга в «${cat.name}»") {
@@ -2217,8 +2237,10 @@ private fun MainCategoryLinesSection(
     onUpdateFailed: () -> Unit,
     onDeleteLine: (Long) -> Unit,
     headerModifier: Modifier = Modifier,
-    onReorderMoveUp: (() -> Unit)? = null,
-    onReorderMoveDown: (() -> Unit)? = null,
+    reorderState: HdReorderableState? = null,
+    reorderIndex: Int = 0,
+    reorderItemCount: Int = 0,
+    onReorder: ((from: Int, to: Int) -> Unit)? = null,
 ) {
     val motion = LocalHdMotion.current
     val shape = RoundedCornerShape(12.dp)
@@ -2232,47 +2254,56 @@ private fun MainCategoryLinesSection(
     val headerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val headerPressed by headerInteraction.collectIsPressedAsState()
     val headerScale by animateFloatAsState(if (headerPressed) 0.98f else 1f, label = "catHeaderScale")
+    val reorderModifier = if (reorderState != null && onReorder != null) {
+        Modifier.hdReorderableItem(reorderState, reorderIndex, reorderItemCount, onReorder)
+    } else {
+        Modifier
+    }
     Column(Modifier.padding(bottom = 10.dp)) {
         Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onReorderMoveUp != null && onReorderMoveDown != null) {
-                ReorderDragHandle(
-                    onMoveUp = onReorderMoveUp,
-                    onMoveDown = onReorderMoveDown,
-                )
-            }
-            Row(
             Modifier
-                .weight(1f)
-                .then(headerModifier)
-                .scale(headerScale)
-                .clip(shape)
-                .background(highlightColors.background)
-                .border(
-                    width = highlightColors.borderWidth,
-                    brush = highlightColors.borderBrush,
-                    shape = shape,
-                )
-                .clickable(
-                    interactionSource = headerInteraction,
-                    indication = ripple(color = HdOrange),
-                    onClick = onToggleExpand,
-                )
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .fillMaxWidth()
+                .then(reorderModifier),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(group.title, color = highlightColors.titleColor)
-                Text("${group.lines.size} поз.", color = HdTextSecondary)
+            Row(
+                Modifier
+                    .weight(1f)
+                    .then(headerModifier)
+                    .scale(headerScale)
+                    .clip(shape)
+                    .background(highlightColors.background)
+                    .border(
+                        width = highlightColors.borderWidth,
+                        brush = highlightColors.borderBrush,
+                        shape = shape,
+                    )
+                    .clickable(
+                        interactionSource = headerInteraction,
+                        indication = ripple(color = HdOrange),
+                        onClick = onToggleExpand,
+                    )
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(group.title, color = highlightColors.titleColor)
+                    Text("${group.lines.size} поз.", color = HdTextSecondary)
+                }
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                    tint = HdOrange.copy(alpha = 0.85f),
+                )
             }
-            Icon(
-                if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (expanded) "Свернуть" else "Развернуть",
-                tint = HdOrange.copy(alpha = 0.85f),
-            )
+            if (reorderState != null && onReorder != null) {
+                ReorderDragHandle(
+                    state = reorderState,
+                    index = reorderIndex,
+                    itemCount = reorderItemCount,
+                    onMove = onReorder,
+                )
             }
         }
         AnimatedVisibility(

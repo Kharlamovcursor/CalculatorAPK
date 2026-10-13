@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -100,6 +104,49 @@ fun HdScreenRoot(
 ) {
     androidx.compose.foundation.layout.Box(modifier = modifier) {
         content()
+    }
+}
+
+/** Узкая колонка действий — удобнее дотягиваться большим пальцем на телефоне. */
+fun Modifier.hdThumbActionWidth(): Modifier =
+    fillMaxWidth().widthIn(max = 400.dp)
+
+/**
+ * Основной блок по вертикали по центру видимой области; при переполнении — прокрутка.
+ * [footer] (например, версия) остаётся внизу экрана.
+ */
+@Composable
+fun HdThumbFriendlyBody(
+    modifier: Modifier = Modifier,
+    footer: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier.fillMaxSize()) {
+        BoxWithConstraints(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        ) {
+            val scroll = rememberScrollState()
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = maxHeight)
+                    .verticalScroll(scroll),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Column(
+                    Modifier
+                        .hdThumbActionWidth()
+                        .padding(horizontal = 8.dp, vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    content()
+                }
+            }
+        }
+        footer?.invoke()
     }
 }
 
