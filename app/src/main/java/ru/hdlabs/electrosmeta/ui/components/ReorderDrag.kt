@@ -1,5 +1,7 @@
 package ru.hdlabs.electrosmeta.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -97,30 +100,49 @@ class HdReorderableState {
 @Composable
 fun rememberHdReorderableState(): HdReorderableState = remember { HdReorderableState() }
 
+private const val ReorderSettleMs = 240
+
 fun Modifier.hdReorderableItem(
     state: HdReorderableState,
     index: Int,
 ): Modifier = composed {
     val dragging = state.draggingIndex == index
-    val translationTarget = if (dragging) state.dragOffset else 0f
+    var lastIndex by remember { mutableIntStateOf(index) }
+    val settle = remember { Animatable(0f) }
+    LaunchedEffect(index, state.draggingIndex) {
+        val previous = lastIndex
+        lastIndex = index
+        if (previous != index && state.isDragging && state.draggingIndex != index) {
+            val height = state.itemHeights[index]?.toFloat()
+                ?: state.itemHeights[previous]?.toFloat()
+                ?: 88f
+            settle.snapTo((previous - index) * height)
+            settle.animateTo(0f, tween(ReorderSettleMs, easing = FastOutSlowInEasing))
+        } else if (!state.isDragging && settle.value != 0f) {
+            settle.animateTo(0f, tween(ReorderSettleMs, easing = FastOutSlowInEasing))
+        }
+    }
     val translation by animateFloatAsState(
-        targetValue = translationTarget,
-        animationSpec = tween(durationMillis = if (dragging) 0 else 160),
+        targetValue = if (dragging) state.dragOffset else 0f,
+        animationSpec = tween(
+            durationMillis = if (dragging) 0 else ReorderSettleMs,
+            easing = FastOutSlowInEasing,
+        ),
         label = "reorderLock",
     )
     val scale by animateFloatAsState(
         targetValue = if (dragging) 1.03f else 1f,
-        animationSpec = tween(if (dragging) 80 else 160),
+        animationSpec = tween(ReorderSettleMs, easing = FastOutSlowInEasing),
         label = "reorderScale",
     )
     this
         .zIndex(if (dragging) 2f else 0f)
         .onSizeChanged { state.itemHeights[index] = it.height }
         .graphicsLayer {
-            translationY = translation
+            translationY = translation + if (dragging) 0f else settle.value
             scaleX = scale
             scaleY = scale
-            shadowElevation = if (dragging) 12f else 0f
+            shadowElevation = if (dragging) 8f else 0f
             alpha = if (dragging) 0.98f else 1f
         }
 }
