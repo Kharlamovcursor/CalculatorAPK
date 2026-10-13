@@ -28,6 +28,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.layout.ContentScale
@@ -49,6 +50,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -91,6 +93,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -744,6 +747,9 @@ private fun HistoryScreen(nav: NavHostController) {
     var deleteTarget by remember { mutableStateOf<EstimateEntity?>(null) }
     var renameTarget by remember { mutableStateOf<EstimateEntity?>(null) }
     var renameTitle by remember { mutableStateOf("") }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val list = if (query.isBlank()) estimates else {
         estimates.filter {
@@ -752,34 +758,108 @@ private fun HistoryScreen(nav: NavHostController) {
                 (it.clientAddress?.contains(query, true) == true)
         }
     }
+    val visibleIds = list.map { it.id }.toSet()
+    val allVisibleSelected = visibleIds.isNotEmpty() && visibleIds.all { it in selectedIds }
+    LaunchedEffect(estimates) {
+        val alive = estimates.map { it.id }.toSet()
+        selectedIds = selectedIds.intersect(alive)
+        if (estimates.isEmpty()) selectionMode = false
+    }
+    fun toggleSelected(id: Long) {
+        selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+    }
     HdScaffold(title = "История", onBack = { nav.popBackStack() }) {
         HdTextField(query, { query = it }, "Поиск")
         Spacer(Modifier.height(8.dp))
+        if (list.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selectionMode) {
+                    Text(
+                        if (allVisibleSelected) "Снять все" else "Выбрать все",
+                        color = HdOrange,
+                        modifier = Modifier.clickable {
+                            selectedIds = if (allVisibleSelected) {
+                                selectedIds - visibleIds
+                            } else {
+                                selectedIds + visibleIds
+                            }
+                        },
+                    )
+                    Text(
+                        "Готово",
+                        color = HdTextPrimary,
+                        modifier = Modifier.clickable {
+                            selectionMode = false
+                            selectedIds = emptySet()
+                        },
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "Выбрать",
+                        color = HdOrange,
+                        modifier = Modifier.clickable { selectionMode = true },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        if (selectionMode && selectedIds.isNotEmpty()) {
+            HdSecondaryButton("Удалить выбранные (${selectedIds.size})") {
+                confirmBulkDelete = true
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         list.forEach { item ->
-            HdCard(Modifier.padding(bottom = 8.dp)) {
-                Text(item.title, color = HdTextPrimary)
-                Text(item.status.name, color = HdTextSecondary)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Text("Открыть", color = HdTextPrimary, modifier = Modifier.clickable {
-                        nav.navigate(Routes.estimate(item.id))
-                    })
-                    Text("  ·  ", color = HdTextSecondary)
-                    Text("Копия", color = HdTextPrimary, modifier = Modifier.clickable {
-                        scope.launch {
-                            app.container.estimateRepository.duplicateEstimate(item.id)?.let { newId ->
-                                nav.navigate(Routes.estimate(newId))
+            val selected = item.id in selectedIds
+            HdCard(
+                Modifier
+                    .padding(bottom = 8.dp)
+                    .then(
+                        if (selectionMode) {
+                            Modifier.clickable { toggleSelected(item.id) }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (selectionMode) {
+                        HistorySelectCircle(selected = selected)
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text(item.title, color = HdTextPrimary)
+                        Text(item.status.name, color = HdTextSecondary)
+                        if (!selectionMode) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                Text("Открыть", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    nav.navigate(Routes.estimate(item.id))
+                                })
+                                Text("  ·  ", color = HdTextSecondary)
+                                Text("Копия", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    scope.launch {
+                                        app.container.estimateRepository.duplicateEstimate(item.id)?.let { newId ->
+                                            nav.navigate(Routes.estimate(newId))
+                                        }
+                                    }
+                                })
+                                Text("  ·  ", color = HdTextSecondary)
+                                Text("Имя", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    renameTarget = item
+                                    renameTitle = item.title
+                                })
+                                Text("  ·  ", color = HdTextSecondary)
+                                Text("Удалить", color = HdTextPrimary, modifier = Modifier.clickable {
+                                    deleteTarget = item
+                                })
                             }
                         }
-                    })
-                    Text("  ·  ", color = HdTextSecondary)
-                    Text("Имя", color = HdTextPrimary, modifier = Modifier.clickable {
-                        renameTarget = item
-                        renameTitle = item.title
-                    })
-                    Text("  ·  ", color = HdTextSecondary)
-                    Text("Удалить", color = HdTextPrimary, modifier = Modifier.clickable {
-                        deleteTarget = item
-                    })
+                    }
                 }
             }
         }
@@ -804,6 +884,34 @@ private fun HistoryScreen(nav: NavHostController) {
         )
     }
 
+    if (confirmBulkDelete && selectedIds.isNotEmpty()) {
+        val count = selectedIds.size
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = { Text("Удалить выбранные?") },
+            text = {
+                Text(
+                    "Будет удалено: $count. Восстановить расчёты нельзя.",
+                    color = HdTextSecondary,
+                )
+            },
+            confirmButton = {
+                HdPrimaryButton("Удалить") {
+                    val ids = selectedIds.toList()
+                    scope.launch {
+                        ids.forEach { app.container.estimateRepository.deleteEstimate(it) }
+                        selectedIds = emptySet()
+                        selectionMode = false
+                        confirmBulkDelete = false
+                    }
+                }
+            },
+            dismissButton = {
+                HdSecondaryButton("Отмена") { confirmBulkDelete = false }
+            },
+        )
+    }
+
     renameTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { renameTarget = null },
@@ -824,6 +932,22 @@ private fun HistoryScreen(nav: NavHostController) {
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun HistorySelectCircle(selected: Boolean) {
+    Box(
+        Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(if (selected) HdOrange else Color.Transparent)
+            .border(2.dp, if (selected) HdOrange else HdTextSecondary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Text("✓", color = HdBlack)
+        }
     }
 }
 
