@@ -35,6 +35,7 @@ fun categoryHighlightColors(
     style: CategoryHighlightStyle,
     animationEnabled: Boolean,
     expanded: Boolean = false,
+    pulseStrength: Float = 1f,
 ): CategoryHighlightColors {
     if (!active) {
         return CategoryHighlightColors(
@@ -60,12 +61,14 @@ fun categoryHighlightColors(
     } else {
         0.5f
     }
+    val amp = pulseStrength.coerceIn(0.5f, 2f)
+    val p = (pulse * amp).coerceIn(0f, 1f)
     return when (style) {
         CategoryHighlightStyle.SoftGlow -> {
-            val glow = 0.12f + pulse * 0.1f
+            val glow = (0.12f + p * 0.14f) * amp.coerceAtMost(1.5f)
             CategoryHighlightColors(
-                background = HdBlue.copy(alpha = glow),
-                borderBrush = SolidColor(HdBlue.copy(alpha = 0.45f + pulse * 0.15f)),
+                background = HdBlue.copy(alpha = glow.coerceIn(0f, 0.45f)),
+                borderBrush = SolidColor(HdBlue.copy(alpha = (0.45f + p * 0.22f).coerceIn(0f, 1f))),
                 borderWidth = 1.5.dp,
                 titleColor = HdTextPrimary,
             )
@@ -73,8 +76,8 @@ fun categoryHighlightColors(
         CategoryHighlightStyle.PulseBorder -> {
             CategoryHighlightColors(
                 background = HdPanel.copy(alpha = 0.72f),
-                borderBrush = SolidColor(HdOrange.copy(alpha = 0.35f + pulse * 0.25f)),
-                borderWidth = (1f + pulse * 1.2f).dp,
+                borderBrush = SolidColor(HdOrange.copy(alpha = (0.35f + p * 0.32f).coerceIn(0f, 1f))),
+                borderWidth = (1f + p * 1.5f).dp,
                 titleColor = HdTextPrimary,
             )
         }
@@ -83,11 +86,19 @@ fun categoryHighlightColors(
                 background = HdPanel.copy(alpha = 0.68f),
                 borderBrush = Brush.horizontalGradient(
                     listOf(
-                        HdBlue.copy(alpha = 0.5f + pulse * 0.15f),
-                        HdOrange.copy(alpha = 0.45f + pulse * 0.12f),
+                        HdBlue.copy(alpha = (0.5f + p * 0.2f).coerceIn(0f, 1f)),
+                        HdOrange.copy(alpha = (0.45f + p * 0.18f).coerceIn(0f, 1f)),
                     ),
                 ),
                 borderWidth = 1.5.dp,
+                titleColor = HdTextPrimary,
+            )
+        }
+        CategoryHighlightStyle.Noticeable -> {
+            CategoryHighlightColors(
+                background = HdBlue.copy(alpha = (0.18f + p * 0.2f).coerceIn(0f, 0.55f)),
+                borderBrush = SolidColor(HdOrange.copy(alpha = (0.5f + p * 0.35f).coerceIn(0f, 1f))),
+                borderWidth = (1.5f + p * 1f).dp,
                 titleColor = HdTextPrimary,
             )
         }

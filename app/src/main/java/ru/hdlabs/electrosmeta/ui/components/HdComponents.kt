@@ -48,6 +48,7 @@ import ru.hdlabs.electrosmeta.ui.theme.HdPanel
 import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
+import ru.hdlabs.electrosmeta.ui.motion.LocalHdMotion
 
 val HdQuickUnits: List<String> = listOf("шт.", "м", "м.п.", "компл.")
 
@@ -127,11 +128,12 @@ fun HdPrimaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) 0.9f else 1f,
-        animationSpec = tween(90),
+        targetValue = if (pressed && enabled) motion.buttonPressScale else 1f,
+        animationSpec = tween(motion.buttonPressDurationMs),
         label = "btnScale",
     )
     Button(
@@ -162,11 +164,12 @@ fun HdSecondaryButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) 0.9f else 1f,
-        animationSpec = tween(90),
+        targetValue = if (pressed && enabled) motion.buttonPressScale else 1f,
+        animationSpec = tween(motion.buttonPressDurationMs),
         label = "btnScaleSec",
     )
     Button(

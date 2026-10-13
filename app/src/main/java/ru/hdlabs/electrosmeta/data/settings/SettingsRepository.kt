@@ -17,9 +17,10 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
-            animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 100,
+            animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 115,
             animationEnabled = prefs[Keys.ANIM_ENABLED] ?: true,
             powerSaveMode = prefs[Keys.POWER_SAVE] ?: false,
+            uiMotionLevel = UiMotionLevel.fromStorage(prefs[Keys.UI_MOTION_LEVEL]),
             companyName = prefs[Keys.COMPANY] ?: "HDLabs",
             performerTitle = prefs[Keys.PERFORMER] ?: "Электромонтажные работы",
             inn = prefs[Keys.INN] ?: "",
@@ -41,9 +42,10 @@ class SettingsRepository(private val context: Context) {
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         context.dataStore.edit { prefs ->
             val current = AppSettings(
-                animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 100,
+                animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 115,
                 animationEnabled = prefs[Keys.ANIM_ENABLED] ?: true,
                 powerSaveMode = prefs[Keys.POWER_SAVE] ?: false,
+                uiMotionLevel = UiMotionLevel.fromStorage(prefs[Keys.UI_MOTION_LEVEL]),
                 companyName = prefs[Keys.COMPANY] ?: "HDLabs",
                 performerTitle = prefs[Keys.PERFORMER] ?: "Электромонтажные работы",
                 inn = prefs[Keys.INN] ?: "",
@@ -79,6 +81,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.TAX_LABEL] = updated.taxLabel
             prefs[Keys.SHOW_COMPLEXITY] = updated.showComplexityInPdf
             prefs[Keys.CATEGORY_HIGHLIGHT] = updated.categoryHighlightStyle.name
+            prefs[Keys.UI_MOTION_LEVEL] = updated.uiMotionLevel.name
         }
     }
 
@@ -101,5 +104,6 @@ class SettingsRepository(private val context: Context) {
         val TAX_LABEL = stringPreferencesKey("tax_label")
         val SHOW_COMPLEXITY = booleanPreferencesKey("show_complexity")
         val CATEGORY_HIGHLIGHT = stringPreferencesKey("category_highlight")
+        val UI_MOTION_LEVEL = stringPreferencesKey("ui_motion_level")
     }
 }

@@ -26,6 +26,7 @@ import ru.hdlabs.electrosmeta.data.settings.AppSettings
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
 import ru.hdlabs.electrosmeta.ui.theme.HdBlue
 import ru.hdlabs.electrosmeta.ui.theme.HdOrange
+import ru.hdlabs.electrosmeta.ui.motion.resolveHdMotion
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -80,7 +81,8 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
     val animEnabled = settings.animationEnabled &&
         !reduceMotion &&
         lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
-    val speedFactor = (settings.animationSpeedPercent / 100f).coerceAtLeast(0.1f)
+    val motion = resolveHdMotion(settings)
+    val speedFactor = (settings.animationSpeedPercent / 100f).coerceAtLeast(0.1f) * motion.backgroundSpeedMultiplier
     val powerSave = settings.powerSaveMode
     val starCount = if (powerSave) 160 else 380
     val pulsarCount = if (powerSave) 3 else 6
@@ -208,7 +210,7 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
                         brush = Brush.linearGradient(
                             colors = listOf(
                                 Color.Transparent,
-                                Color.White.copy(alpha = 0.75f * fade),
+                                Color.White.copy(alpha = 0.88f * fade),
                             ),
                             start = tail,
                             end = head,
@@ -219,7 +221,7 @@ fun SpaceBackground(modifier: Modifier = Modifier) {
                     )
                     drawCircle(
                         color = Color.White.copy(alpha = fade.coerceIn(0f, 1f)),
-                        radius = 2.1f,
+                        radius = 2.4f,
                         center = head,
                     )
                 }

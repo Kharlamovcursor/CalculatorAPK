@@ -1,9 +1,10 @@
 package ru.hdlabs.electrosmeta.data.settings
 
 data class AppSettings(
-    val animationSpeedPercent: Int = 100,
+    val animationSpeedPercent: Int = 115,
     val animationEnabled: Boolean = true,
     val powerSaveMode: Boolean = false,
+    val uiMotionLevel: UiMotionLevel = UiMotionLevel.Balanced,
     val companyName: String = "HDLabs",
     val performerTitle: String = "Электромонтажные работы",
     val inn: String = "",

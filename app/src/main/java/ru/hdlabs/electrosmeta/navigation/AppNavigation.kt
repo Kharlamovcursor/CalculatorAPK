@@ -6,6 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -74,7 +78,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,6 +125,7 @@ import ru.hdlabs.electrosmeta.feature.estimate.EstimateEditorViewModel
 import ru.hdlabs.electrosmeta.feature.template.TemplateEditorUiState
 import ru.hdlabs.electrosmeta.feature.template.TemplateEditorViewModel
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
+import ru.hdlabs.electrosmeta.ui.components.ReorderDragHandle
 import ru.hdlabs.electrosmeta.ui.components.reorderOnLongPressDrag
 import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
 import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
@@ -126,6 +133,9 @@ import ru.hdlabs.electrosmeta.update.UpdateInfo
 import ru.hdlabs.electrosmeta.pdf.PdfStorageHelper
 import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
 import ru.hdlabs.electrosmeta.data.settings.CategoryHighlightStyle
+import ru.hdlabs.electrosmeta.data.settings.UiMotionLevel
+import ru.hdlabs.electrosmeta.ui.motion.LocalHdMotion
+import ru.hdlabs.electrosmeta.ui.motion.resolveHdMotion
 import ru.hdlabs.electrosmeta.ui.components.HdCard
 import ru.hdlabs.electrosmeta.ui.components.categoryHighlightColors
 import ru.hdlabs.electrosmeta.ui.components.HdPrimaryButton
@@ -157,30 +167,53 @@ object Routes {
     fun templateEdit(id: Long) = "template_edit/$id"
 }
 
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun AppNavHost() {
-    val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = Routes.HOME) {
-        composable(Routes.HOME) { HomeScreen(nav) }
-        composable(Routes.ESTIMATE_HUB) { EstimateHubScreen(nav) }
-        composable(
-            route = Routes.TEMPLATE_EDIT,
-            arguments = listOf(navArgument("id") { type = NavType.LongType }),
-        ) { entry ->
-            val id = entry.arguments?.getLong("id") ?: return@composable
-            TemplateEditScreen(nav, id)
-        }
-        composable(Routes.HISTORY) { HistoryScreen(nav) }
-        composable(Routes.PRICE) { PriceListScreen(nav) }
-        composable(Routes.SETTINGS) { SettingsScreen(nav) }
-        composable(Routes.ABOUT) { AboutScreen(nav) }
-        composable(Routes.PRIVACY) { PrivacyScreen(nav) }
-        composable(
-            route = Routes.ESTIMATE,
-            arguments = listOf(navArgument("id") { type = NavType.LongType }),
-        ) { entry ->
-            val id = entry.arguments?.getLong("id") ?: return@composable
-            EstimateScreen(nav, id)
+    val context = LocalContext.current
+    val app = context.applicationContext as ElectrosmetaApplication
+    val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
+    val motion = remember(settings) { resolveHdMotion(settings) }
+    CompositionLocalProvider(LocalHdMotion provides motion) {
+        val nav = rememberNavController()
+        NavHost(
+            navController = nav,
+            startDestination = Routes.HOME,
+            enterTransition = {
+                fadeIn(tween(motion.screenEnterMs)) +
+                    slideInHorizontally(tween(motion.screenEnterMs)) { it / 12 }
+            },
+            exitTransition = { fadeOut(tween(motion.screenExitMs)) },
+            popEnterTransition = {
+                fadeIn(tween(motion.screenEnterMs)) +
+                    slideInHorizontally(tween(motion.screenEnterMs)) { -it / 12 }
+            },
+            popExitTransition = {
+                fadeOut(tween(motion.screenExitMs)) +
+                    slideOutHorizontally(tween(motion.screenExitMs)) { it / 12 }
+            },
+        ) {
+            composable(Routes.HOME) { HomeScreen(nav) }
+            composable(Routes.ESTIMATE_HUB) { EstimateHubScreen(nav) }
+            composable(
+                route = Routes.TEMPLATE_EDIT,
+                arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            ) { entry ->
+                val id = entry.arguments?.getLong("id") ?: return@composable
+                TemplateEditScreen(nav, id)
+            }
+            composable(Routes.HISTORY) { HistoryScreen(nav) }
+            composable(Routes.PRICE) { PriceListScreen(nav) }
+            composable(Routes.SETTINGS) { SettingsScreen(nav) }
+            composable(Routes.ABOUT) { AboutScreen(nav) }
+            composable(Routes.PRIVACY) { PrivacyScreen(nav) }
+            composable(
+                route = Routes.ESTIMATE,
+                arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            ) { entry ->
+                val id = entry.arguments?.getLong("id") ?: return@composable
+                EstimateScreen(nav, id)
+            }
         }
     }
 }
@@ -194,10 +227,11 @@ private fun HdScaffold(
     showTopBar: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     Box(Modifier.fillMaxSize()) {
         SpaceBackground()
         Scaffold(
-            containerColor = HdBlack.copy(alpha = 0.55f),
+            containerColor = HdBlack.copy(alpha = motion.scaffoldOverlayAlpha),
             topBar = {
                 if (showTopBar) {
                     TopAppBar(
@@ -221,7 +255,7 @@ private fun HdScaffold(
             if (scroll) {
                 Column(mod.verticalScroll(rememberScrollState())) { content() }
             } else {
-                Column(mod) { content() }
+                Column(mod.fillMaxSize()) { content() }
             }
         }
     }
@@ -229,35 +263,29 @@ private fun HdScaffold(
 
 @Composable
 private fun HomeScreen(nav: NavHostController) {
-    HdScaffold(title = "", scroll = false, showTopBar = false) {
+    HdScaffold(title = "", scroll = true, showTopBar = false) {
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.weight(1f))
-            Column(
-                Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.calc_home_logo),
-                    contentDescription = "Calc by HDLabs",
-                    modifier = Modifier
-                        .fillMaxWidth(0.58f)
-                        .padding(bottom = 12.dp),
-                    contentScale = ContentScale.Fit,
-                )
-                HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
-                Spacer(Modifier.height(12.dp))
-                HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
-                Spacer(Modifier.height(12.dp))
-                HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
-                Spacer(Modifier.height(12.dp))
-                HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
-            }
-            Spacer(Modifier.weight(1f))
+            Image(
+                painter = painterResource(R.drawable.calc_home_logo),
+                contentDescription = "Calc by HDLabs",
+                modifier = Modifier
+                    .fillMaxWidth(0.58f)
+                    .padding(bottom = 12.dp),
+                contentScale = ContentScale.Fit,
+            )
+            HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
+            Spacer(Modifier.height(12.dp))
+            HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
+            Spacer(Modifier.height(12.dp))
+            HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
+            Spacer(Modifier.height(12.dp))
+            HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
+            Spacer(Modifier.height(24.dp))
             Text(
                 "Версия ${BuildConfig.VERSION_NAME}",
                 color = HdTextSecondary,
@@ -281,17 +309,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
     val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
     var deleteTemplateTarget by remember { mutableStateOf<EstimateTemplateEntity?>(null) }
 
-    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = false) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = maxHeight)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
+    HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = true) {
                 HdPrimaryButton("Новый расчёт") {
                     scope.launch {
                         val tax = app.container.settingsRepository.settings.first().defaultTaxPercent
@@ -310,7 +328,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                 if (orderedTemplates.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Удерживайте строку и тяните вверх/вниз для порядка.",
+                        "Порядок: удерживайте ⋮⋮ слева и тяните вверх или вниз.",
                         color = HdTextSecondary,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
@@ -357,8 +375,13 @@ private fun EstimateHubScreen(nav: NavHostController) {
                         nav.navigate(Routes.templateEdit(id))
                     }
                 }
-            }
-        }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "В шаблоне — те же кнопки «Своя позиция» и «Добавить из прайса», что в расчёте.",
+                    color = HdTextSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
     }
 
     deleteTemplateTarget?.let { target ->
@@ -397,6 +420,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     )
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
+    val motion = LocalHdMotion.current
     val template = state.template
     val snackbarHostState = remember { SnackbarHostState() }
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
@@ -432,28 +456,76 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
             modifier = Modifier.padding(bottom = 8.dp),
         )
         Spacer(Modifier.height(4.dp))
-        Text("Категории и работы", color = HdTextPrimary)
         val groups = buildTemplateLineGroups(state, categoryOrder)
-        groups.forEachIndexed { index, group ->
-            MainCategoryLinesSection(
-                group = group,
-                expanded = expandedKeys.contains(group.categoryKey),
-                highlighted = false,
-                highlightStyle = settings.categoryHighlightStyle,
-                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
-                onToggleExpand = {
-                    expandedKeys = if (expandedKeys.contains(group.categoryKey)) {
-                        expandedKeys - group.categoryKey
-                    } else {
-                        expandedKeys + group.categoryKey
+        HdCard(Modifier.padding(bottom = 12.dp)) {
+            Text("Состав шаблона", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+            if (groups.isEmpty()) {
+                Text(
+                    "Пока пусто. Добавьте работы из прайса или свою позицию — как в расчёте сметы.",
+                    color = HdTextSecondary,
+                    modifier = Modifier.padding(bottom = 10.dp),
+                )
+            }
+            HdSecondaryButton(if (showCustomLineForm) "Скрыть форму" else "Своя позиция") {
+                showCustomLineForm = !showCustomLineForm
+                if (showCustomLineForm) showServicePicker = false
+            }
+            AnimatedVisibility(
+                visible = showCustomLineForm,
+                enter = expandVertically(tween(motion.expandDurationMs)) + fadeIn(tween(motion.expandDurationMs)),
+                exit = shrinkVertically(tween(motion.expandDurationMs - 40)) + fadeOut(tween(motion.expandDurationMs - 60)),
+            ) {
+                Column(Modifier.padding(vertical = 8.dp)) {
+                    HdTextField(customName, { customName = it }, "Название работы")
+                    HdUnitChoiceRow(customUnit, { customUnit = it })
+                    Spacer(Modifier.height(8.dp))
+                    HdTextField(customPrice, { customPrice = it }, "Цена, ₽")
+                    HdTextField(customQty, { customQty = it }, "Количество")
+                    HdSecondaryButton("Добавить в шаблон") {
+                        vm.addCustomLine(customName, customUnit, customPrice, customQty)
+                        customName = ""
+                        expandedKeys = expandedKeys + EstimateLineCategoryKeys.UNCATEGORIZED
                     }
-                },
-                onUpdateLine = { line -> vm.updateLine(line.toTemplateLine(templateId, group.categoryKey)) },
-                onUpdateFailed = {},
-                onDeleteLine = { vm.deleteLine(it) },
-                headerModifier = Modifier.reorderOnLongPressDrag(
-                    enabled = true,
-                    onMoveUp = {
+                }
+            }
+            HdSecondaryButton(if (showServicePicker) "Скрыть прайс" else "Добавить из прайса") {
+                showServicePicker = !showServicePicker
+                if (showServicePicker) showCustomLineForm = false
+            }
+            AnimatedVisibility(
+                visible = showServicePicker,
+                enter = expandVertically(tween(motion.expandDurationMs)) + fadeIn(tween(motion.expandDurationMs)),
+                exit = shrinkVertically(tween(motion.expandDurationMs - 40)) + fadeOut(tween(motion.expandDurationMs - 60)),
+            ) {
+                MainServicePickerPanel(
+                    state = state.toPricePickerState(),
+                    highlightStyle = settings.categoryHighlightStyle,
+                    animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
+                    onAddServices = { services, key ->
+                        vm.addServices(services, key)
+                        expandedKeys = expandedKeys + key
+                        showServicePicker = false
+                    },
+                )
+            }
+            groups.forEach { group ->
+                MainCategoryLinesSection(
+                    group = group,
+                    expanded = expandedKeys.contains(group.categoryKey),
+                    highlighted = false,
+                    highlightStyle = settings.categoryHighlightStyle,
+                    animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
+                    onToggleExpand = {
+                        expandedKeys = if (expandedKeys.contains(group.categoryKey)) {
+                            expandedKeys - group.categoryKey
+                        } else {
+                            expandedKeys + group.categoryKey
+                        }
+                    },
+                    onUpdateLine = { line -> vm.updateLine(line.toTemplateLine(templateId, group.categoryKey)) },
+                    onUpdateFailed = {},
+                    onDeleteLine = { vm.deleteLine(it) },
+                    onReorderMoveUp = {
                         val keys = categoryOrder.toMutableList()
                         val pos = keys.indexOf(group.categoryKey)
                         if (pos > 0) {
@@ -462,7 +534,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                             vm.reorderCategories(keys)
                         }
                     },
-                    onMoveDown = {
+                    onReorderMoveDown = {
                         val keys = categoryOrder.toMutableList()
                         val pos = keys.indexOf(group.categoryKey)
                         if (pos >= 0 && pos < keys.lastIndex) {
@@ -471,44 +543,10 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                             vm.reorderCategories(keys)
                         }
                     },
-                ),
-            )
-        }
-        HdSecondaryButton(if (showCustomLineForm) "Скрыть форму" else "Своя позиция") {
-            showCustomLineForm = !showCustomLineForm
-            if (showCustomLineForm) showServicePicker = false
-        }
-        AnimatedVisibility(visible = showCustomLineForm) {
-            Column(Modifier.padding(vertical = 8.dp)) {
-                HdTextField(customName, { customName = it }, "Название работы")
-                HdUnitChoiceRow(customUnit, { customUnit = it })
-                Spacer(Modifier.height(8.dp))
-                HdTextField(customPrice, { customPrice = it }, "Цена, ₽")
-                HdTextField(customQty, { customQty = it }, "Количество")
-                HdSecondaryButton("Добавить в шаблон") {
-                    vm.addCustomLine(customName, customUnit, customPrice, customQty)
-                    customName = ""
-                    expandedKeys = expandedKeys + EstimateLineCategoryKeys.UNCATEGORIZED
-                }
+                )
             }
         }
-        HdSecondaryButton(if (showServicePicker) "Скрыть прайс" else "Добавить из прайса") {
-            showServicePicker = !showServicePicker
-            if (showServicePicker) showCustomLineForm = false
-        }
-        AnimatedVisibility(visible = showServicePicker) {
-            MainServicePickerPanel(
-                state = state.toPricePickerState(),
-                highlightStyle = settings.categoryHighlightStyle,
-                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
-                onAddServices = { services, key ->
-                    vm.addServices(services, key)
-                    expandedKeys = expandedKeys + key
-                    showServicePicker = false
-                },
-            )
-        }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Удалить шаблон") { showDeleteTemplateConfirm = true }
     }
     SnackbarHost(
@@ -559,44 +597,37 @@ private fun TemplateHubRow(
 ) {
     val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier
-            .fillMaxWidth()
-            .reorderOnLongPressDrag(
-                enabled = true,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-            )
-            .clip(shape)
-            .background(HdPanelElevated.copy(alpha = 0.65f))
-            .border(1.dp, HdBlue.copy(alpha = 0.35f), shape)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(
+        ReorderDragHandle(onMoveUp = onMoveUp, onMoveDown = onMoveDown)
+        Row(
             Modifier
                 .weight(1f)
-                .clickable(onClick = onOpenEstimate),
+                .clip(shape)
+                .background(HdPanelElevated.copy(alpha = 0.65f))
+                .border(1.dp, HdBlue.copy(alpha = 0.35f), shape)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(template.name, color = HdTextPrimary)
-            Text("Нажмите — новый расчёт из шаблона", color = HdTextSecondary)
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = onMoveUp) {
-                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Выше", tint = HdTextSecondary)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenEstimate),
+            ) {
+                Text(template.name, color = HdTextPrimary)
+                Text("Нажмите — новый расчёт из шаблона", color = HdTextSecondary)
             }
-            IconButton(onClick = onMoveDown) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Ниже", tint = HdTextSecondary)
+            Text(
+                "Изменить",
+                color = HdOrange,
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .clickable(onClick = onEdit),
+            )
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Удалить шаблон", tint = HdTextSecondary)
             }
-        }
-        Text(
-            "Изменить",
-            color = HdOrange,
-            modifier = Modifier
-                .padding(horizontal = 4.dp)
-                .clickable(onClick = onEdit),
-        )
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, contentDescription = "Удалить шаблон", tint = HdTextSecondary)
         }
     }
 }
@@ -807,7 +838,7 @@ private fun PriceListScreen(nav: NavHostController) {
 
     HdScaffold(title = "Прайс-лист", onBack = { nav.popBackStack() }) {
         Text(
-            "Удерживайте категорию или услугу и перетащите для смены порядка. Нажмите на категорию, чтобы развернуть.",
+            "Порядок: удерживайте ⋮⋮ слева от строки и тяните вверх или вниз. Нажмите на категорию, чтобы развернуть.",
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -831,34 +862,37 @@ private fun PriceListScreen(nav: NavHostController) {
                 }
             }
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .reorderOnLongPressDrag(
-                        enabled = true,
-                        onMoveUp = {
-                            if (catIndex > 0) {
-                                val next = orderedCategoryIds.toMutableList()
-                                next[catIndex - 1] = next[catIndex].also { next[catIndex] = next[catIndex - 1] }
-                                orderedCategoryIds = next
-                                scope.launch { app.container.priceRepository.reorderCategories(next) }
-                            }
-                        },
-                        onMoveDown = {
-                            if (catIndex < orderedCategoryIds.lastIndex) {
-                                val next = orderedCategoryIds.toMutableList()
-                                next[catIndex + 1] = next[catIndex].also { next[catIndex] = next[catIndex + 1] }
-                                orderedCategoryIds = next
-                                scope.launch { app.container.priceRepository.reorderCategories(next) }
-                            }
-                        },
-                    )
-                    .clip(catShape)
-                    .background(HdPanelElevated.copy(alpha = 0.65f))
-                    .border(1.dp, HdTextSecondary.copy(alpha = 0.35f), catShape)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                ReorderDragHandle(
+                    onMoveUp = {
+                        if (catIndex > 0) {
+                            val next = orderedCategoryIds.toMutableList()
+                            next[catIndex - 1] = next[catIndex].also { next[catIndex] = next[catIndex - 1] }
+                            orderedCategoryIds = next
+                            scope.launch { app.container.priceRepository.reorderCategories(next) }
+                        }
+                    },
+                    onMoveDown = {
+                        if (catIndex < orderedCategoryIds.lastIndex) {
+                            val next = orderedCategoryIds.toMutableList()
+                            next[catIndex + 1] = next[catIndex].also { next[catIndex] = next[catIndex + 1] }
+                            orderedCategoryIds = next
+                            scope.launch { app.container.priceRepository.reorderCategories(next) }
+                        }
+                    },
+                )
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .clip(catShape)
+                        .background(HdPanelElevated.copy(alpha = 0.65f))
+                        .border(1.dp, HdTextSecondary.copy(alpha = 0.35f), catShape)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 Column(
                     Modifier
                         .weight(1f)
@@ -880,6 +914,7 @@ private fun PriceListScreen(nav: NavHostController) {
                     tint = HdOrange,
                     modifier = Modifier.clickable(onClick = toggleExpand),
                 )
+                }
             }
             AnimatedVisibility(
                 visible = expanded,
@@ -888,33 +923,33 @@ private fun PriceListScreen(nav: NavHostController) {
             ) {
                 Column {
                     orderedServices.forEachIndexed { svcIndex, svc ->
-                        HdCard(
-                            Modifier
-                                .padding(top = 6.dp)
-                                .reorderOnLongPressDrag(
-                                    enabled = true,
-                                    onMoveUp = {
-                                        if (svcIndex > 0) {
-                                            val next = orderedServiceIds.toMutableList()
-                                            next[svcIndex - 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex - 1] }
-                                            serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
-                                            scope.launch {
-                                                app.container.priceRepository.reorderServices(cat.id, next)
-                                            }
-                                        }
-                                    },
-                                    onMoveDown = {
-                                        if (svcIndex < orderedServiceIds.lastIndex) {
-                                            val next = orderedServiceIds.toMutableList()
-                                            next[svcIndex + 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex + 1] }
-                                            serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
-                                            scope.launch {
-                                                app.container.priceRepository.reorderServices(cat.id, next)
-                                            }
-                                        }
-                                    },
-                                ),
+                        Row(
+                            Modifier.padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            ReorderDragHandle(
+                                onMoveUp = {
+                                    if (svcIndex > 0) {
+                                        val next = orderedServiceIds.toMutableList()
+                                        next[svcIndex - 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex - 1] }
+                                        serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
+                                        scope.launch {
+                                            app.container.priceRepository.reorderServices(cat.id, next)
+                                        }
+                                    }
+                                },
+                                onMoveDown = {
+                                    if (svcIndex < orderedServiceIds.lastIndex) {
+                                        val next = orderedServiceIds.toMutableList()
+                                        next[svcIndex + 1] = next[svcIndex].also { next[svcIndex] = next[svcIndex + 1] }
+                                        serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
+                                        scope.launch {
+                                            app.container.priceRepository.reorderServices(cat.id, next)
+                                        }
+                                    }
+                                },
+                            )
+                            HdCard(Modifier.weight(1f)) {
                             Text(svc.name, color = HdTextPrimary)
                             Text("${formatRubles(svc.priceKopecks)} / ${svc.unit}", color = HdTextSecondary)
                             Row {
@@ -932,6 +967,7 @@ private fun PriceListScreen(nav: NavHostController) {
                                 Text("  ·  Архив", color = HdTextPrimary, modifier = Modifier.clickable {
                                     scope.launch { app.container.priceRepository.archiveService(svc.id) }
                                 })
+                            }
                             }
                         }
                     }
@@ -1164,6 +1200,41 @@ private fun SettingsScreen(nav: NavHostController) {
             })
         }
         Spacer(Modifier.height(16.dp))
+        Text("Анимация интерфейса", color = HdTextPrimary)
+        Text(
+            "Кнопки, раскрытие блоков, переходы между экранами и подсветка категорий. Фон настраивается отдельно выше.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        listOf(
+            UiMotionLevel.Subtle to "Спокойно (как раньше)",
+            UiMotionLevel.Balanced to "Сбалансировано (рекомендуется)",
+            UiMotionLevel.Expressive to "Выразительно",
+        ).forEach { (level, label) ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
+                        }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = settings.uiMotionLevel == level,
+                    onCheckedChange = {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
+                        }
+                    },
+                    colors = CheckboxDefaults.colors(checkedColor = HdBlue),
+                )
+                Text(label, color = HdTextPrimary)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
         Text("Подсветка категории в смете", color = HdTextPrimary)
         Text(
             "Как выделяется категория после добавления позиции или в выборе из прайса.",
@@ -1174,6 +1245,7 @@ private fun SettingsScreen(nav: NavHostController) {
             CategoryHighlightStyle.SoftGlow to "Мягкое свечение (синий, спокойно)",
             CategoryHighlightStyle.PulseBorder to "Пульсирующая рамка",
             CategoryHighlightStyle.GradientRing to "Градиент синий → оранжевый",
+            CategoryHighlightStyle.Noticeable to "Заметнее (оранжевая рамка)",
         ).forEach { (style, label) ->
             Row(
                 Modifier
@@ -1474,6 +1546,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     val estimate = state.estimate
     val scope = rememberCoroutineScope()
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
+    val motion = LocalHdMotion.current
 
     var title by remember(estimate?.id) { mutableStateOf(estimate?.title ?: "") }
     var clientName by remember(estimate?.id) { mutableStateOf(estimate?.clientName ?: "") }
@@ -1517,6 +1590,8 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
     var generatedPdfSizeLabel by remember { mutableStateOf("") }
     var pdfDownloadsPath by remember { mutableStateOf<String?>(null) }
     var showSaveResultDialog by remember { mutableStateOf(false) }
+    var showSaveAsTemplateDialog by remember { mutableStateOf(false) }
+    var templateSaveName by remember { mutableStateOf("") }
     var manualSavePhase by remember { mutableStateOf(ManualSavePhase.Idle) }
 
     suspend fun persistForm(forceDefaults: Boolean): Boolean {
@@ -1662,8 +1737,10 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             }
             AnimatedVisibility(
                 visible = showCustomLineForm,
-                enter = expandVertically(animationSpec = tween(300)) + fadeIn(animationSpec = tween(260)),
-                exit = shrinkVertically(animationSpec = tween(240)) + fadeOut(animationSpec = tween(200)),
+                enter = expandVertically(animationSpec = tween(motion.expandDurationMs)) +
+                    fadeIn(animationSpec = tween(motion.expandDurationMs)),
+                exit = shrinkVertically(animationSpec = tween(motion.expandDurationMs - 40)) +
+                    fadeOut(animationSpec = tween(motion.expandDurationMs - 60)),
             ) {
                 Column(Modifier.padding(bottom = 12.dp)) {
                     HdTextField(quickName, { quickName = it }, "Название работы")
@@ -1728,8 +1805,10 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             }
             AnimatedVisibility(
                 visible = showServicePicker,
-                enter = expandVertically(animationSpec = tween(320)) + fadeIn(animationSpec = tween(280)),
-                exit = shrinkVertically(animationSpec = tween(260)) + fadeOut(animationSpec = tween(220)),
+                enter = expandVertically(animationSpec = tween(motion.expandDurationMs)) +
+                    fadeIn(animationSpec = tween(motion.expandDurationMs)),
+                exit = shrinkVertically(animationSpec = tween(motion.expandDurationMs - 40)) +
+                    fadeOut(animationSpec = tween(motion.expandDurationMs - 60)),
             ) {
                 MainServicePickerPanel(
                     state = state.toPricePickerState(),
@@ -1798,6 +1877,15 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             },
         )
         Spacer(Modifier.height(8.dp))
+        HdSecondaryButton("Сохранить как шаблон") {
+            if (state.lines.isEmpty()) {
+                scope.launch { showSnack("Добавьте позиции в смету") }
+            } else {
+                templateSaveName = title
+                showSaveAsTemplateDialog = true
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         HdPrimaryButton("Сформировать PDF") { showPdfPreview = true }
     }
     SnackbarHost(
@@ -1814,6 +1902,44 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             )
         },
     )
+    }
+
+    if (showSaveAsTemplateDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveAsTemplateDialog = false },
+            title = { Text("Сохранить как шаблон") },
+            text = {
+                HdDialogFieldColumn {
+                    HdTextField(templateSaveName, { templateSaveName = it }, "Название шаблона")
+                    Text(
+                        "Сохранятся все позиции и категории этой сметы.",
+                        color = HdTextSecondary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                HdPrimaryButton("Сохранить") {
+                    scope.launch {
+                        if (!persistForm(forceDefaults = true)) {
+                            showSnack("Сначала исправьте поля сметы")
+                            return@launch
+                        }
+                        val id = app.container.templateRepository.createFromEstimate(
+                            estimateId,
+                            templateSaveName,
+                        )
+                        if (id == null) {
+                            showSnack("Не удалось создать шаблон")
+                        } else {
+                            showSnack("✓ Шаблон «${templateSaveName.trim()}» сохранён")
+                            showSaveAsTemplateDialog = false
+                        }
+                    }
+                }
+            },
+            dismissButton = { HdSecondaryButton("Отмена") { showSaveAsTemplateDialog = false } },
+        )
     }
 
     if (showSaveResultDialog) {
@@ -1982,18 +2108,19 @@ private fun ManualSaveEstimateButton(
     phase: ManualSavePhase,
     onClick: () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = when (phase) {
-            ManualSavePhase.Success -> 1.05f
-            ManualSavePhase.Saving -> 0.96f
-            else -> if (pressed) 0.94f else 1f
+            ManualSavePhase.Success -> 1.06f
+            ManualSavePhase.Saving -> motion.buttonPressScale
+            else -> if (pressed) motion.buttonPressScale else 1f
         },
         animationSpec = if (phase == ManualSavePhase.Success) {
             spring(dampingRatio = 0.55f, stiffness = 380f)
         } else {
-            tween(120)
+            tween(motion.buttonPressDurationMs)
         },
         label = "manualSaveScale",
     )
@@ -2090,21 +2217,35 @@ private fun MainCategoryLinesSection(
     onUpdateFailed: () -> Unit,
     onDeleteLine: (Long) -> Unit,
     headerModifier: Modifier = Modifier,
+    onReorderMoveUp: (() -> Unit)? = null,
+    onReorderMoveDown: (() -> Unit)? = null,
 ) {
+    val motion = LocalHdMotion.current
     val shape = RoundedCornerShape(12.dp)
     val highlightColors = categoryHighlightColors(
         active = highlighted,
         style = highlightStyle,
         animationEnabled = animationEnabled,
         expanded = expanded && !highlighted,
+        pulseStrength = motion.highlightPulseStrength,
     )
     val headerInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val headerPressed by headerInteraction.collectIsPressedAsState()
     val headerScale by animateFloatAsState(if (headerPressed) 0.98f else 1f, label = "catHeaderScale")
     Column(Modifier.padding(bottom = 10.dp)) {
         Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onReorderMoveUp != null && onReorderMoveDown != null) {
+                ReorderDragHandle(
+                    onMoveUp = onReorderMoveUp,
+                    onMoveDown = onReorderMoveDown,
+                )
+            }
+            Row(
             Modifier
-                .fillMaxWidth()
+                .weight(1f)
                 .then(headerModifier)
                 .scale(headerScale)
                 .clip(shape)
@@ -2132,21 +2273,30 @@ private fun MainCategoryLinesSection(
                 contentDescription = if (expanded) "Свернуть" else "Развернуть",
                 tint = HdOrange.copy(alpha = 0.85f),
             )
+            }
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(240)),
-            exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(tween(200)),
+            enter = expandVertically(animationSpec = tween(motion.expandDurationMs)) +
+                fadeIn(tween(motion.expandDurationMs)),
+            exit = shrinkVertically(animationSpec = tween(motion.expandDurationMs - 40)) +
+                fadeOut(tween(motion.expandDurationMs - 60)),
         ) {
             Column(Modifier.padding(top = 6.dp)) {
                 group.lines.forEach { line ->
-                    LineEditor(
-                        line = line,
-                        allowUnitChoice = line.catalogServiceId == null,
-                        onUpdate = onUpdateLine,
-                        onUpdateFailed = onUpdateFailed,
-                        onDelete = { onDeleteLine(line.id) },
-                    )
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(tween(motion.lineEnterMs)) +
+                            expandVertically(tween(motion.lineEnterMs)),
+                    ) {
+                        LineEditor(
+                            line = line,
+                            allowUnitChoice = line.catalogServiceId == null,
+                            onUpdate = onUpdateLine,
+                            onUpdateFailed = onUpdateFailed,
+                            onDelete = { onDeleteLine(line.id) },
+                        )
+                    }
                 }
             }
         }
@@ -2160,6 +2310,7 @@ private fun MainServicePickerPanel(
     animationEnabled: Boolean,
     onAddServices: (List<ServiceEntity>, Long) -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     var step by remember { mutableStateOf(ServicePickerStep.Categories) }
     var activeCategoryId by remember { mutableStateOf<Long?>(null) }
     var selectedServiceIds by remember { mutableStateOf(setOf<Long>()) }
@@ -2180,11 +2331,15 @@ private fun MainServicePickerPanel(
             targetState = step,
             transitionSpec = {
                 if (targetState == ServicePickerStep.Services) {
-                    slideInHorizontally(animationSpec = tween(300)) { it / 3 } + fadeIn(tween(280)) togetherWith
-                        slideOutHorizontally(animationSpec = tween(300)) { -it / 3 } + fadeOut(tween(220))
+                    slideInHorizontally(animationSpec = tween(motion.expandDurationMs)) { it / 3 } +
+                        fadeIn(tween(motion.expandDurationMs)) togetherWith
+                        slideOutHorizontally(animationSpec = tween(motion.expandDurationMs)) { -it / 3 } +
+                        fadeOut(tween(motion.expandDurationMs - 40))
                 } else {
-                    slideInHorizontally(animationSpec = tween(300)) { -it / 3 } + fadeIn(tween(280)) togetherWith
-                        slideOutHorizontally(animationSpec = tween(300)) { it / 3 } + fadeOut(tween(220))
+                    slideInHorizontally(animationSpec = tween(motion.expandDurationMs)) { -it / 3 } +
+                        fadeIn(tween(motion.expandDurationMs)) togetherWith
+                        slideOutHorizontally(animationSpec = tween(motion.expandDurationMs)) { it / 3 } +
+                        fadeOut(tween(motion.expandDurationMs - 40))
                 }
             },
             label = "servicePickerStep",
@@ -2326,11 +2481,13 @@ private fun ServiceCategoryChip(
     animationEnabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     val shape = RoundedCornerShape(12.dp)
     val colors = categoryHighlightColors(
         active = selected,
         style = highlightStyle,
         animationEnabled = animationEnabled,
+        pulseStrength = motion.highlightPulseStrength,
     )
     val chipInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val chipPressed by chipInteraction.collectIsPressedAsState()

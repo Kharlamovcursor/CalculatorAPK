@@ -129,6 +129,35 @@ class TemplateRepository(
         )
     }
 
+    suspend fun createFromEstimate(estimateId: Long, preferredName: String? = null): Long? {
+        val content = estimateRepository.getWithLines(estimateId) ?: return null
+        if (content.lines.isEmpty()) return null
+        val name = preferredName?.trim()?.takeIf { it.isNotEmpty() } ?: content.estimate.title
+        val templateId = createTemplate(name, EstimateType.MAIN)
+        val categoryKeys = content.lines.map { line ->
+            line.categoryKey ?: EstimateLineCategoryKeys.UNCATEGORIZED
+        }.distinct()
+        categoryKeys.forEachIndexed { index, key ->
+            ensureCategory(templateId, key, sortOrder = index)
+        }
+        content.lines.sortedBy { it.sortOrder }.forEachIndexed { index, line ->
+            val key = line.categoryKey ?: EstimateLineCategoryKeys.UNCATEGORIZED
+            templateDao.insertLine(
+                EstimateTemplateLineEntity(
+                    templateId = templateId,
+                    categoryKey = key,
+                    catalogServiceId = line.catalogServiceId,
+                    name = line.name,
+                    unit = line.unit,
+                    unitPriceKopecks = line.unitPriceKopecks,
+                    quantity = line.quantity,
+                    sortOrder = index,
+                ),
+            )
+        }
+        return templateId
+    }
+
     suspend fun createEstimateFromTemplate(templateId: Long, taxPercent: Double): Long? {
         val content = templateDao.getWithContent(templateId) ?: return null
         val estimateId = estimateRepository.createDraft(EstimateType.MAIN, taxPercent)
