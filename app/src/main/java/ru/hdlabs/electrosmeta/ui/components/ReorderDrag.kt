@@ -30,12 +30,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import kotlin.math.abs
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
 
 @Stable
 class HdReorderableState {
-    var originIndex by mutableStateOf<Int?>(null)
+    var draggingIndex by mutableStateOf<Int?>(null)
         private set
     var dragOffset by mutableFloatStateOf(0f)
         private set
@@ -43,55 +42,50 @@ class HdReorderableState {
         private set
     internal val itemHeights = mutableStateMapOf<Int, Int>()
 
+    val isDragging: Boolean get() = draggingIndex != null
+
     fun startDrag(index: Int, count: Int) {
-        originIndex = index
+        draggingIndex = index
         itemCount = count
         dragOffset = 0f
     }
 
-    fun addDelta(deltaY: Float) {
-        if (originIndex == null) return
+    fun dragBy(deltaY: Float, count: Int, onMove: (Int, Int) -> Unit) {
+        if (draggingIndex == null) return
+        itemCount = count
         dragOffset += deltaY
+        while (true) {
+            val index = draggingIndex ?: return
+            if (index < count - 1 && dragOffset > heightAt(index + 1) / 2f) {
+                val step = heightAt(index + 1)
+                onMove(index, index + 1)
+                swapHeights(index, index + 1)
+                draggingIndex = index + 1
+                dragOffset -= step
+                continue
+            }
+            if (index > 0 && dragOffset < -heightAt(index - 1) / 2f) {
+                val step = heightAt(index - 1)
+                onMove(index, index - 1)
+                swapHeights(index, index - 1)
+                draggingIndex = index - 1
+                dragOffset += step
+                continue
+            }
+            break
+        }
     }
 
     fun endDrag() {
-        originIndex = null
+        draggingIndex = null
         dragOffset = 0f
     }
 
-    fun targetIndex(): Int {
-        val origin = originIndex ?: return 0
-        val count = itemCount
-        if (count <= 1) return origin
-        var top = 0f
-        for (i in 0 until origin) top += heightAt(i)
-        val center = top + dragOffset + heightAt(origin) / 2f
-        var cursor = 0f
-        var nearest = 0
-        var best = Float.MAX_VALUE
-        for (i in 0 until count) {
-            val h = heightAt(i)
-            val itemCenter = cursor + h / 2f
-            val dist = abs(center - itemCenter)
-            if (dist < best) {
-                best = dist
-                nearest = i
-            }
-            cursor += h
-        }
-        return nearest
-    }
-
-    fun shiftFor(index: Int): Float {
-        val origin = originIndex ?: return 0f
-        val target = targetIndex()
-        if (index == origin) return dragOffset
-        val gap = heightAt(origin)
-        return when {
-            target > origin && index in (origin + 1)..target -> -gap
-            target < origin && index in target until origin -> gap
-            else -> 0f
-        }
+    private fun swapHeights(from: Int, to: Int) {
+        val fromHeight = itemHeights[from]
+        val toHeight = itemHeights[to]
+        if (toHeight != null) itemHeights[from] = toHeight else itemHeights.remove(from)
+        if (fromHeight != null) itemHeights[to] = fromHeight else itemHeights.remove(to)
     }
 
     private fun heightAt(index: Int): Float {
@@ -107,28 +101,27 @@ fun Modifier.hdReorderableItem(
     state: HdReorderableState,
     index: Int,
 ): Modifier = composed {
-    val origin = state.originIndex
-    val dragging = origin == index
-    val shift = state.shiftFor(index)
-    val animatedShift by animateFloatAsState(
-        targetValue = shift,
-        animationSpec = tween(durationMillis = if (dragging) 0 else 140),
-        label = "reorderShift",
+    val dragging = state.draggingIndex == index
+    val translationTarget = if (dragging) state.dragOffset else 0f
+    val translation by animateFloatAsState(
+        targetValue = translationTarget,
+        animationSpec = tween(durationMillis = if (dragging) 0 else 160),
+        label = "reorderLock",
     )
     val scale by animateFloatAsState(
         targetValue = if (dragging) 1.03f else 1f,
-        animationSpec = tween(120),
+        animationSpec = tween(if (dragging) 80 else 160),
         label = "reorderScale",
     )
     this
         .zIndex(if (dragging) 2f else 0f)
         .onSizeChanged { state.itemHeights[index] = it.height }
         .graphicsLayer {
-            translationY = if (dragging) state.dragOffset else animatedShift
+            translationY = translation
             scaleX = scale
             scaleY = scale
             shadowElevation = if (dragging) 12f else 0f
-            alpha = if (dragging) 0.96f else 1f
+            alpha = if (dragging) 0.98f else 1f
         }
 }
 
@@ -138,11 +131,13 @@ fun ReorderDragHandle(
     index: Int,
     itemCount: Int,
     onMove: (from: Int, to: Int) -> Unit,
+    onDragEnd: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val latestIndex by rememberUpdatedState(index)
     val latestCount by rememberUpdatedState(itemCount)
     val latestOnMove by rememberUpdatedState(onMove)
+    val latestOnDragEnd by rememberUpdatedState(onDragEnd)
     var dragging by remember { mutableStateOf(false) }
     val blockParentScroll = remember {
         object : NestedScrollConnection {
@@ -162,19 +157,18 @@ fun ReorderDragHandle(
                         state.startDrag(latestIndex, latestCount)
                     },
                     onDragEnd = {
-                        val from = state.originIndex
-                        val to = state.targetIndex()
                         dragging = false
-                        if (from != null && from != to) latestOnMove(from, to)
                         state.endDrag()
+                        latestOnDragEnd()
                     },
                     onDragCancel = {
                         dragging = false
                         state.endDrag()
+                        latestOnDragEnd()
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        state.addDelta(dragAmount.y)
+                        state.dragBy(dragAmount.y, latestCount, latestOnMove)
                     },
                 )
             }

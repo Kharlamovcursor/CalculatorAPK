@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import kotlinx.coroutines.delay
 import ru.hdlabs.electrosmeta.R
 import ru.hdlabs.electrosmeta.backup.BackupSummary
@@ -306,13 +307,14 @@ private fun EstimateHubScreen(nav: NavHostController) {
     val templates by app.container.templateRepository.observeTemplates()
         .collectAsStateWithLifecycle(initialValue = emptyList())
     var orderedIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+    val templateReorderState = rememberHdReorderableState()
     LaunchedEffect(templates) {
+        if (templateReorderState.isDragging) return@LaunchedEffect
         val ids = templates.map { it.id }
         orderedIds = (orderedIds.filter { ids.contains(it) } + ids.filter { !orderedIds.contains(it) })
     }
     val orderedTemplates = orderedIds.mapNotNull { id -> templates.find { it.id == id } }
     var deleteTemplateTarget by remember { mutableStateOf<EstimateTemplateEntity?>(null) }
-    val templateReorderState = rememberHdReorderableState()
 
     HdScaffold(title = "Расчёт сметы", onBack = { nav.popBackStack() }, scroll = false) {
         HdThumbFriendlyBody {
@@ -343,6 +345,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                     )
                 }
                 orderedTemplates.forEachIndexed { index, template ->
+                    key(template.id) {
                     TemplateHubRow(
                         template = template,
                         reorderState = templateReorderState,
@@ -353,7 +356,9 @@ private fun EstimateHubScreen(nav: NavHostController) {
                             val id = next.removeAt(from)
                             next.add(to, id)
                             orderedIds = next
-                            scope.launch { app.container.templateRepository.reorderTemplates(next) }
+                        },
+                        onDragEnd = {
+                            scope.launch { app.container.templateRepository.reorderTemplates(orderedIds) }
                         },
                         onOpenEstimate = {
                             scope.launch {
@@ -367,6 +372,7 @@ private fun EstimateHubScreen(nav: NavHostController) {
                         onEdit = { nav.navigate(Routes.templateEdit(template.id)) },
                         onDelete = { deleteTemplateTarget = template },
                     )
+                    }
                 }
                 HdSecondaryButton("Добавить шаблон") {
                     scope.launch {
@@ -434,7 +440,9 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     var customQty by remember { mutableStateOf("1") }
     var expandedKeys by remember { mutableStateOf(setOf<Long>()) }
     var categoryOrder by remember(state.categoryOrder) { mutableStateOf(state.categoryOrder) }
-    LaunchedEffect(state.categoryOrder) { categoryOrder = state.categoryOrder }
+    LaunchedEffect(state.categoryOrder) {
+        if (!templateLineReorderState.isDragging) categoryOrder = state.categoryOrder
+    }
     LaunchedEffect(title, template?.id) {
         if (state.loading || template == null) return@LaunchedEffect
         delay(800)
@@ -519,6 +527,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                 )
             }
             groups.forEachIndexed { index, group ->
+                key(group.categoryKey) {
                 MainCategoryLinesSection(
                     group = group,
                     expanded = expandedKeys.contains(group.categoryKey),
@@ -540,12 +549,13 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     reorderItemCount = groups.size,
                     onReorder = { from, to ->
                         val keys = categoryOrder.toMutableList()
-                        val key = keys.removeAt(from)
-                        keys.add(to, key)
+                        val moved = keys.removeAt(from)
+                        keys.add(to, moved)
                         categoryOrder = keys
-                        vm.reorderCategories(keys)
                     },
+                    onReorderSettled = { vm.reorderCategories(categoryOrder) },
                 )
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -597,6 +607,7 @@ private fun TemplateHubRow(
     index: Int,
     itemCount: Int,
     onMove: (from: Int, to: Int) -> Unit,
+    onDragEnd: () -> Unit,
     onOpenEstimate: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -642,6 +653,7 @@ private fun TemplateHubRow(
             index = index,
             itemCount = itemCount,
             onMove = onMove,
+            onDragEnd = onDragEnd,
         )
     }
 }
@@ -835,8 +847,10 @@ private fun PriceListScreen(nav: NavHostController) {
     var orderedCategoryIds by remember(categories) { mutableStateOf(categories.map { it.id }) }
     var serviceOrderByCategory by remember { mutableStateOf(mapOf<Long, List<Long>>()) }
     val scope = rememberCoroutineScope()
+    val categoryReorderState = rememberHdReorderableState()
 
     LaunchedEffect(categories) {
+        if (categoryReorderState.isDragging) return@LaunchedEffect
         val ids = categories.map { it.id }
         orderedCategoryIds = orderedCategoryIds.filter { ids.contains(it) } + ids.filter { !orderedCategoryIds.contains(it) }
     }
@@ -850,8 +864,6 @@ private fun PriceListScreen(nav: NavHostController) {
         serviceOrderByCategory = next
     }
 
-    val categoryReorderState = rememberHdReorderableState()
-
     HdScaffold(title = "Прайс-лист", onBack = { nav.popBackStack() }) {
         Text(
             "Порядок: удерживайте ⋮⋮ справа и перетаскивайте между пунктами. Нажмите на категорию, чтобы развернуть.",
@@ -862,6 +874,7 @@ private fun PriceListScreen(nav: NavHostController) {
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Сбросить к стартовому прайсу") { confirmReset = true }
         orderedCategoryIds.mapNotNull { id -> categories.find { it.id == id } }.forEachIndexed { catIndex, cat ->
+            key(cat.id) {
             val orderedServiceIds = serviceOrderByCategory[cat.id] ?: emptyList()
             val orderedServices = orderedServiceIds.mapNotNull { sid ->
                 services.find { it.id == sid && it.categoryId == cat.id }
@@ -924,7 +937,9 @@ private fun PriceListScreen(nav: NavHostController) {
                         val movedId = next.removeAt(from)
                         next.add(to, movedId)
                         orderedCategoryIds = next
-                        scope.launch { app.container.priceRepository.reorderCategories(next) }
+                    },
+                    onDragEnd = {
+                        scope.launch { app.container.priceRepository.reorderCategories(orderedCategoryIds) }
                     },
                 )
             }
@@ -936,14 +951,13 @@ private fun PriceListScreen(nav: NavHostController) {
             ) {
                 Column {
                     orderedServices.forEachIndexed { svcIndex, svc ->
+                        key(svc.id) {
                         val onServiceMove: (Int, Int) -> Unit = { from, to ->
-                            val next = orderedServiceIds.toMutableList()
+                            val current = serviceOrderByCategory[cat.id] ?: orderedServiceIds
+                            val next = current.toMutableList()
                             val movedId = next.removeAt(from)
                             next.add(to, movedId)
                             serviceOrderByCategory = serviceOrderByCategory + (cat.id to next)
-                            scope.launch {
-                                app.container.priceRepository.reorderServices(cat.id, next)
-                            }
                         }
                         Row(
                             Modifier
@@ -977,7 +991,12 @@ private fun PriceListScreen(nav: NavHostController) {
                                 index = svcIndex,
                                 itemCount = orderedServices.size,
                                 onMove = onServiceMove,
+                                onDragEnd = {
+                                    val ids = serviceOrderByCategory[cat.id] ?: return@ReorderDragHandle
+                                    scope.launch { app.container.priceRepository.reorderServices(cat.id, ids) }
+                                },
                             )
+                        }
                         }
                     }
                     HdSecondaryButton("+ Услуга в «${cat.name}»") {
@@ -993,6 +1012,7 @@ private fun PriceListScreen(nav: NavHostController) {
                         archiveCategoryTarget = cat
                     }
                 }
+            }
             }
         }
         if (archivedCategories.isNotEmpty()) {
@@ -2230,6 +2250,7 @@ private fun MainCategoryLinesSection(
     reorderIndex: Int = 0,
     reorderItemCount: Int = 0,
     onReorder: ((from: Int, to: Int) -> Unit)? = null,
+    onReorderSettled: (() -> Unit)? = null,
 ) {
     val motion = LocalHdMotion.current
     val shape = RoundedCornerShape(12.dp)
@@ -2292,6 +2313,7 @@ private fun MainCategoryLinesSection(
                     index = reorderIndex,
                     itemCount = reorderItemCount,
                     onMove = onReorder,
+                    onDragEnd = { onReorderSettled?.invoke() },
                 )
             }
         }
