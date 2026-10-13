@@ -2,6 +2,7 @@ package ru.hdlabs.electrosmeta.navigation
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -421,7 +422,6 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val motion = LocalHdMotion.current
     val template = state.template
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
     val templateLineReorderState = rememberHdReorderableState()
@@ -443,9 +443,18 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
         vm.rename(trimmed)
         snackbarHostState.showSnackbar("Название сохранено", duration = SnackbarDuration.Short)
     }
+    val saveAndLeave: () -> Unit = {
+        val currentName = template?.name
+        val trimmed = title.trim()
+        if (currentName != null && trimmed.isNotEmpty() && trimmed != currentName) {
+            vm.rename(trimmed)
+        }
+        nav.popBackStack()
+    }
+    BackHandler(onBack = saveAndLeave)
 
     Box(Modifier.fillMaxSize()) {
-    HdScaffold(title = template?.name ?: "Шаблон", onBack = { nav.popBackStack() }) {
+    HdScaffold(title = template?.name ?: "Шаблон", onBack = saveAndLeave) {
         if (state.loading || template == null) {
             Text("Загрузка…", color = HdTextSecondary)
             return@HdScaffold
@@ -540,12 +549,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        HdSecondaryButton("Добавить шаблон") {
-            scope.launch {
-                val id = app.container.templateRepository.createTemplate("", EstimateType.MAIN)
-                nav.navigate(Routes.templateEdit(id))
-            }
-        }
+        HdSecondaryButton("Сохранить шаблон", onClick = saveAndLeave)
         Spacer(Modifier.height(8.dp))
         HdSecondaryButton("Удалить шаблон") { showDeleteTemplateConfirm = true }
     }
@@ -602,7 +606,7 @@ private fun TemplateHubRow(
         Modifier
             .fillMaxWidth()
             .padding(bottom = 10.dp)
-            .hdReorderableItem(reorderState, index, itemCount, onMove),
+            .hdReorderableItem(reorderState, index),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -876,17 +880,7 @@ private fun PriceListScreen(nav: NavHostController) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .hdReorderableItem(
-                        categoryReorderState,
-                        catIndex,
-                        orderedCategoryIds.size,
-                    ) { from, to ->
-                        val next = orderedCategoryIds.toMutableList()
-                        val id = next.removeAt(from)
-                        next.add(to, id)
-                        orderedCategoryIds = next
-                        scope.launch { app.container.priceRepository.reorderCategories(next) }
-                    },
+                    .hdReorderableItem(categoryReorderState, catIndex),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -955,12 +949,7 @@ private fun PriceListScreen(nav: NavHostController) {
                             Modifier
                                 .fillMaxWidth()
                                 .padding(top = 6.dp)
-                                .hdReorderableItem(
-                                    serviceReorderState,
-                                    svcIndex,
-                                    orderedServices.size,
-                                    onServiceMove,
-                                ),
+                                .hdReorderableItem(serviceReorderState, svcIndex),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             HdCard(Modifier.weight(1f)) {
@@ -2255,7 +2244,7 @@ private fun MainCategoryLinesSection(
     val headerPressed by headerInteraction.collectIsPressedAsState()
     val headerScale by animateFloatAsState(if (headerPressed) 0.98f else 1f, label = "catHeaderScale")
     val reorderModifier = if (reorderState != null && onReorder != null) {
-        Modifier.hdReorderableItem(reorderState, reorderIndex, reorderItemCount, onReorder)
+        Modifier.hdReorderableItem(reorderState, reorderIndex)
     } else {
         Modifier
     }

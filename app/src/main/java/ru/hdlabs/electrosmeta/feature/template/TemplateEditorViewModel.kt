@@ -106,7 +106,7 @@ class TemplateEditorViewModel(
     fun reorderCategories(orderedKeys: List<Long>) {
         viewModelScope.launch {
             templateRepository.reorderCategories(templateId, orderedKeys)
-            reload()
+            refreshFromDatabase()
         }
     }
 
