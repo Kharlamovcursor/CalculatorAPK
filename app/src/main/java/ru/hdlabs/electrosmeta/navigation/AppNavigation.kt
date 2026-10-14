@@ -165,6 +165,7 @@ import ru.hdlabs.electrosmeta.ui.components.HdSecondaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdDialogFieldColumn
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
 import ru.hdlabs.electrosmeta.ui.components.HdThumbFriendlyBody
+import ru.hdlabs.electrosmeta.ui.components.hdThumbActionWidth
 import androidx.compose.foundation.background
 import ru.hdlabs.electrosmeta.ui.theme.HdBlack
 import ru.hdlabs.electrosmeta.ui.theme.HdPanel
@@ -172,6 +173,15 @@ import ru.hdlabs.electrosmeta.ui.theme.HdPanelElevated
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
 import ru.hdlabs.electrosmeta.update.InstallHelper
+import ru.hdlabs.electrosmeta.feature.tools.BreakerToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.CableOrderToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.CableSectionToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.LedStripToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.LightingToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.RcdToolScreen
+import ru.hdlabs.electrosmeta.feature.tools.ToolRoutes
+import ru.hdlabs.electrosmeta.feature.tools.ToolsHubContent
+import ru.hdlabs.electrosmeta.feature.tools.VoltageDropToolScreen
 import java.io.File
 
 object Routes {
@@ -224,6 +234,27 @@ fun AppNavHost() {
             },
         ) {
             composable(Routes.HOME) { HomeScreen(nav) }
+            composable(ToolRoutes.CABLE) {
+                CableSectionToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.LED) {
+                LedStripToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.BREAKER) {
+                BreakerToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.VOLTAGE_DROP) {
+                VoltageDropToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.LIGHTING) {
+                LightingToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.RCD) {
+                RcdToolScreen(onBack = { nav.popBackStack() })
+            }
+            composable(ToolRoutes.CABLE_ORDER) {
+                CableOrderToolScreen(onBack = { nav.popBackStack() })
+            }
             composable(Routes.ESTIMATE_HUB) { EstimateHubScreen(nav) }
             composable(
                 route = Routes.TEMPLATE_EDIT,
@@ -291,8 +322,11 @@ private fun HdScaffold(
     }
 }
 
+private enum class HomeTab { Estimate, Tools }
+
 @Composable
 private fun HomeScreen(nav: NavHostController) {
+    var tab by remember { mutableStateOf(HomeTab.Estimate) }
     HdScaffold(title = "", scroll = false, showTopBar = false) {
         HdThumbFriendlyBody(
             footer = {
@@ -311,17 +345,77 @@ private fun HomeScreen(nav: NavHostController) {
                 contentDescription = "Calc by HDLabs",
                 modifier = Modifier
                     .fillMaxWidth(0.72f)
-                    .padding(bottom = 12.dp),
+                    .padding(bottom = 10.dp),
                 contentScale = ContentScale.Fit,
             )
-            HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
-            Spacer(Modifier.height(12.dp))
-            HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
-            Spacer(Modifier.height(12.dp))
-            HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
-            Spacer(Modifier.height(12.dp))
-            HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
+            HomeTabSwitcher(tab) { tab = it }
+            Spacer(Modifier.height(14.dp))
+            when (tab) {
+                HomeTab.Estimate -> {
+                    HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
+                    Spacer(Modifier.height(12.dp))
+                    HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
+                }
+                HomeTab.Tools -> {
+                    ToolsHubContent(
+                        nav = nav,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .hdThumbActionWidth(),
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun HomeTabSwitcher(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .hdThumbActionWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HomeTabChip("Смета", selected == HomeTab.Estimate, Modifier.weight(1f)) {
+            onSelect(HomeTab.Estimate)
+        }
+        HomeTabChip("Расчёты", selected == HomeTab.Tools, Modifier.weight(1f)) {
+            onSelect(HomeTab.Tools)
+        }
+    }
+}
+
+@Composable
+private fun HomeTabChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier
+            .clip(shape)
+            .background(if (selected) HdBlue.copy(alpha = 0.4f) else HdPanel)
+            .border(
+                1.dp,
+                if (selected) HdOrange.copy(alpha = 0.85f) else HdTextSecondary.copy(alpha = 0.35f),
+                shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            label,
+            color = if (selected) HdTextPrimary else HdTextSecondary,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
