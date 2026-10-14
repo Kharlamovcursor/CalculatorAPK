@@ -73,6 +73,14 @@ class ElectricalCalculatorsTest {
     }
 
     @Test
+    fun ledStripAt5Volts() {
+        val r = ElectricalCalculators.ledStrip(LedStripInput(2.0, 10.0, 5.0))
+        assertNotNull(r)
+        assertEquals(20.0, r!!.totalWatts, 0.01)
+        assertEquals(4.0, r.loadAmps, 0.01)
+    }
+
+    @Test
     fun ledStripWithDcFeeder() {
         val r = ElectricalCalculators.ledStrip(
             LedStripInput(

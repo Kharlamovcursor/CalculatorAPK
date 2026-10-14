@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,6 +74,14 @@ object ToolRoutes {
     const val LIGHTING = "tool/lighting"
     const val RCD = "tool/rcd"
     const val CABLE_ORDER = "tool/cable_order"
+
+    const val HOME_TAB_KEY = "homeTab"
+    const val HOME_TAB_TOOLS = "Tools"
+
+    fun navigateToTool(nav: NavHostController, route: String, homeRoute: String) {
+        nav.getBackStackEntry(homeRoute).savedStateHandle[HOME_TAB_KEY] = HOME_TAB_TOOLS
+        nav.navigate(route)
+    }
 }
 
 private data class ToolCard(
@@ -91,6 +103,7 @@ private val toolCards = listOf(
 @Composable
 fun ToolsHubContent(
     nav: NavHostController,
+    homeRoute: String,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -101,7 +114,7 @@ fun ToolsHubContent(
             textAlign = TextAlign.Center,
         )
         toolCards.forEach { card ->
-            ToolHubCard(card, onClick = { nav.navigate(card.route) })
+            ToolHubCard(card, onClick = { ToolRoutes.navigateToTool(nav, card.route, homeRoute) })
             Spacer(Modifier.height(10.dp))
         }
     }
@@ -129,16 +142,20 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
     ToolScreenScaffold("Сечение кабеля", onBack) {
         var current by remember { mutableStateOf("16") }
         var length by remember { mutableStateOf("") }
-        var voltage by remember { mutableStateOf("220") }
+        var lineVoltage by remember { mutableIntStateOf(220) }
         var material by remember { mutableStateOf(ConductorMaterial.Copper) }
         var install by remember { mutableStateOf(CableInstallMode.InConduit) }
         var phase by remember { mutableStateOf(PhaseMode.Single) }
+        LaunchedEffect(phase) {
+            if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
+            if (phase == PhaseMode.Single && lineVoltage == 380) lineVoltage = 220
+        }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
 
         HdTextField(current, { current = it }, "Ток нагрузки, А")
         HdTextField(length, { length = it }, "Длина линии, м (необяз.)")
-        HdTextField(voltage, { voltage = it }, "Напряжение, В")
+        HdAcVoltagePicker(lineVoltage, onSelect = { lineVoltage = it })
         HdChoiceLabel("Материал")
         HdTwoChoice("Медь", "Алюминий", material == ConductorMaterial.Copper) {
             material = if (it) ConductorMaterial.Copper else ConductorMaterial.Aluminum
@@ -153,14 +170,13 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         }
         HdPrimaryButton("Рассчитать") {
             val i = parseElectricalDouble(current)
-            val u = parseElectricalDouble(voltage) ?: 220.0
             val len = parseElectricalDouble(length)
             if (i == null || i <= 0) {
                 resultText = null
                 notes = listOf("Укажите ток больше 0.")
             } else {
                 val r = ElectricalCalculators.cableSection(
-                    CableSectionInput(i, material, install, len, phase, u),
+                    CableSectionInput(i, material, install, len, phase, lineVoltage.toDouble()),
                 )
                 if (r == null) {
                     resultText = "Не удалось рассчитать"
@@ -181,7 +197,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
     ToolScreenScaffold("Светодиодная лента", onBack) {
         var length by remember { mutableStateOf("5") }
         var wpm by remember { mutableStateOf("14.4") }
-        var volts by remember { mutableStateOf("12") }
+        var supplyVolts by remember { mutableIntStateOf(12) }
         var feederLen by remember { mutableStateOf("15") }
         var feederSection by remember { mutableStateOf("1.5") }
         var feederMaterial by remember { mutableStateOf(ConductorMaterial.Copper) }
@@ -190,7 +206,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
 
         HdTextField(length, { length = it }, "Длина ленты, м")
         HdTextField(wpm, { wpm = it }, "Мощность, Вт/м")
-        HdTextField(volts, { volts = it }, "Напряжение БП (на ленту), В")
+        HdLedVoltagePicker(supplyVolts, onSelect = { supplyVolts = it })
         Text(
             "БП в щите — линия постоянного тока до ленты",
             color = HdOrange,
@@ -210,7 +226,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
         HdPrimaryButton("Рассчитать") {
             val l = parseElectricalDouble(length)
             val w = parseElectricalDouble(wpm)
-            val v = parseElectricalDouble(volts)
+            val v = supplyVolts.toDouble()
             val fLen = parseElectricalDouble(feederLen)
             val fS = parseElectricalDouble(feederSection)
             val dcFeeder = if (fLen != null && fS != null && fLen > 0 && fS > 0) {
@@ -218,7 +234,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
             } else {
                 null
             }
-            val r = if (l != null && w != null && v != null) {
+            val r = if (l != null && w != null) {
                 ElectricalCalculators.ledStrip(LedStripInput(l, w, v, dcFeeder = dcFeeder))
             } else null
             if (r == null) {
@@ -248,8 +264,11 @@ fun LedStripToolScreen(onBack: () -> Unit) {
                 }
                 notes = buildList {
                     if (r.feederHint.isNotBlank()) add(r.feederHint)
+                    if (supplyVolts <= 5) {
+                        add("На 5 В ток выше — нужен толстый кабель до ленты и БП с запасом по амперам.")
+                    }
                     r.dcFeeder?.let {
-                        add("При большом падении лента тускнеет на конце; для 12 В часто целятся в ≤3% ΔU.")
+                        add("При большом падении лента тускнеет на конце; для низкого напряжения часто целятся в ≤3% ΔU.")
                     }
                 }
             }
@@ -262,14 +281,18 @@ fun LedStripToolScreen(onBack: () -> Unit) {
 fun BreakerToolScreen(onBack: () -> Unit) {
     ToolScreenScaffold("Ток и автомат", onBack) {
         var power by remember { mutableStateOf("3") }
-        var voltage by remember { mutableStateOf("220") }
+        var lineVoltage by remember { mutableIntStateOf(220) }
         var cos by remember { mutableStateOf("1") }
         var phase by remember { mutableStateOf(PhaseMode.Single) }
+        LaunchedEffect(phase) {
+            if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
+            if (phase == PhaseMode.Single && lineVoltage == 380) lineVoltage = 220
+        }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
 
         HdTextField(power, { power = it }, "Мощность, кВт")
-        HdTextField(voltage, { voltage = it }, "Напряжение, В")
+        HdAcVoltagePicker(lineVoltage, onSelect = { lineVoltage = it })
         HdTextField(cos, { cos = it }, "cos φ")
         HdChoiceLabel("Сеть")
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
@@ -277,9 +300,12 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         }
         HdPrimaryButton("Рассчитать") {
             val p = parseElectricalDouble(power)
-            val u = parseElectricalDouble(voltage) ?: 220.0
             val c = parseElectricalDouble(cos) ?: 1.0
-            val r = if (p != null) ElectricalCalculators.breakerSizing(BreakerInput(p, phase, u, c)) else null
+            val r = if (p != null) {
+                ElectricalCalculators.breakerSizing(
+                    BreakerInput(p, phase, lineVoltage.toDouble(), c),
+                )
+            } else null
             if (r == null) {
                 resultText = null
                 notes = listOf("Укажите мощность.")
@@ -301,16 +327,20 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         var current by remember { mutableStateOf("10") }
         var length by remember { mutableStateOf("25") }
         var section by remember { mutableStateOf("2.5") }
-        var voltage by remember { mutableStateOf("220") }
+        var lineVoltage by remember { mutableIntStateOf(220) }
         var material by remember { mutableStateOf(ConductorMaterial.Copper) }
         var phase by remember { mutableStateOf(PhaseMode.Single) }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(phase) {
+            if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
+            if (phase == PhaseMode.Single && lineVoltage == 380) lineVoltage = 220
+        }
 
         HdTextField(current, { current = it }, "Ток, А")
         HdTextField(length, { length = it }, "Длина, м")
         HdTextField(section, { section = it }, "Сечение, мм²")
-        HdTextField(voltage, { voltage = it }, "Напряжение, В")
+        HdAcVoltagePicker(lineVoltage, onSelect = { lineVoltage = it })
         HdChoiceLabel("Материал")
         HdTwoChoice("Медь", "Алюминий", material == ConductorMaterial.Copper) {
             material = if (it) ConductorMaterial.Copper else ConductorMaterial.Aluminum
@@ -323,9 +353,10 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
             val i = parseElectricalDouble(current)
             val l = parseElectricalDouble(length)
             val s = parseElectricalDouble(section)
-            val u = parseElectricalDouble(voltage) ?: 220.0
             val r = if (i != null && l != null && s != null) {
-                ElectricalCalculators.voltageDrop(VoltageDropInput(i, l, s, material, phase, u))
+                ElectricalCalculators.voltageDrop(
+                    VoltageDropInput(i, l, s, material, phase, lineVoltage.toDouble()),
+                )
             } else null
             if (r == null) {
                 resultText = null
@@ -378,6 +409,11 @@ fun RcdToolScreen(onBack: () -> Unit) {
         HdTextField(breaker, { breaker = it }, "Номинал автомата линии, А")
         HdChoiceLabel("Зона")
         HdTwoChoice("Сухие помещения", "Ванная / душ", !wet) { dry -> wet = !dry }
+        Text(
+            "Для квартир и новой проводки предпочтительны УЗО типа A (чувствительны к пульсирующему постоянному току). Тип AC — в основном для старых линий без электроники; для дома с LED, зарядками и БП часто недостаточен.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
         HdPrimaryButton("Подсказка") {
             val b = parseElectricalDouble(breaker)?.toInt()
             if (b == null || b <= 0) {
@@ -455,19 +491,31 @@ internal fun ToolScreenScaffold(
                 )
             },
         ) { padding ->
-            Column(
+            BoxWithConstraints(
                 Modifier
                     .padding(padding)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxSize()
+                    .imePadding(),
             ) {
-                content()
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    "Расчёт ориентировочный. Ответственность за проектные решения несёт исполнитель.",
-                    color = HdTextSecondary,
-                )
+                val scroll = rememberScrollState()
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = maxHeight)
+                        .verticalScroll(scroll)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        content()
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        "Расчёт ориентировочный. Ответственность за проектные решения несёт исполнитель.",
+                        color = HdTextSecondary,
+                    )
+                }
             }
         }
     }
@@ -485,6 +533,27 @@ private fun ToolResultBlock(result: String?, notes: List<String>) {
             }
         }
     }
+}
+
+@Composable
+private fun HdAcVoltagePicker(selected: Int, onSelect: (Int) -> Unit) {
+    HdChoiceLabel("Напряжение, В")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        HdChipToggle("220", selected == 220, Modifier.weight(1f)) { onSelect(220) }
+        HdChipToggle("380", selected == 380, Modifier.weight(1f)) { onSelect(380) }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun HdLedVoltagePicker(selected: Int, onSelect: (Int) -> Unit) {
+    HdChoiceLabel("Напряжение БП (на ленту), В")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        HdChipToggle("5", selected == 5, Modifier.weight(1f)) { onSelect(5) }
+        HdChipToggle("12", selected == 12, Modifier.weight(1f)) { onSelect(12) }
+        HdChipToggle("24", selected == 24, Modifier.weight(1f)) { onSelect(24) }
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable

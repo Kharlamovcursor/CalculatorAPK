@@ -327,7 +327,28 @@ private enum class HomeTab { Estimate, Tools }
 @Composable
 private fun HomeScreen(nav: NavHostController) {
     val motion = LocalHdMotion.current
-    var tab by remember { mutableStateOf(HomeTab.Estimate) }
+    val homeEntry = remember(nav) { nav.getBackStackEntry(Routes.HOME) }
+    val homeTabHandle = homeEntry.savedStateHandle
+    var tab by remember {
+        mutableStateOf(
+            if (homeTabHandle.get<String>(ToolRoutes.HOME_TAB_KEY) == ToolRoutes.HOME_TAB_TOOLS) {
+                HomeTab.Tools
+            } else {
+                HomeTab.Estimate
+            },
+        )
+    }
+    LaunchedEffect(nav.currentBackStackEntry) {
+        if (nav.currentDestination?.route == Routes.HOME) {
+            when (homeTabHandle.get<String>(ToolRoutes.HOME_TAB_KEY)) {
+                ToolRoutes.HOME_TAB_TOOLS -> tab = HomeTab.Tools
+                HomeTab.Estimate.name -> tab = HomeTab.Estimate
+            }
+        }
+    }
+    LaunchedEffect(tab) {
+        homeTabHandle[ToolRoutes.HOME_TAB_KEY] = tab.name
+    }
     val homeScroll = rememberScrollState()
     HdScaffold(title = "", scroll = false, showTopBar = false) {
         Column(Modifier.fillMaxSize()) {
@@ -384,6 +405,7 @@ private fun HomeScreen(nav: NavHostController) {
                                     HomeTab.Tools -> {
                                         ToolsHubContent(
                                             nav = nav,
+                                            homeRoute = Routes.HOME,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
