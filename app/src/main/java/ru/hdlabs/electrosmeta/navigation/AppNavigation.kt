@@ -326,49 +326,81 @@ private enum class HomeTab { Estimate, Tools }
 
 @Composable
 private fun HomeScreen(nav: NavHostController) {
+    val motion = LocalHdMotion.current
     var tab by remember { mutableStateOf(HomeTab.Estimate) }
+    val homeScroll = rememberScrollState()
     HdScaffold(title = "", scroll = false, showTopBar = false) {
-        HdThumbFriendlyBody(
-            footer = {
-                Text(
-                    "Версия ${BuildConfig.VERSION_NAME}",
-                    color = HdTextSecondary,
-                    modifier = Modifier
+        Column(Modifier.fillMaxSize()) {
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                Column(
+                    Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    textAlign = TextAlign.Center,
-                )
-            },
-        ) {
-            Image(
-                painter = painterResource(R.drawable.calc_home_logo),
-                contentDescription = "Calc by HDLabs",
-                modifier = Modifier
-                    .fillMaxWidth(0.72f)
-                    .padding(bottom = 10.dp),
-                contentScale = ContentScale.Fit,
-            )
-            HomeTabSwitcher(tab) { tab = it }
-            Spacer(Modifier.height(14.dp))
-            when (tab) {
-                HomeTab.Estimate -> {
-                    HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
-                    Spacer(Modifier.height(12.dp))
-                    HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
-                }
-                HomeTab.Tools -> {
-                    ToolsHubContent(
-                        nav = nav,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .hdThumbActionWidth(),
-                    )
+                        .heightIn(min = maxHeight)
+                        .verticalScroll(homeScroll)
+                        .padding(top = 28.dp, bottom = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Column(
+                        Modifier.hdThumbActionWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.calc_home_logo),
+                            contentDescription = "Calc by HDLabs",
+                            modifier = Modifier
+                                .fillMaxWidth(0.72f)
+                                .padding(bottom = 10.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                        HomeTabSwitcher(tab) { tab = it }
+                        Spacer(Modifier.height(14.dp))
+                        AnimatedContent(
+                            targetState = tab,
+                            transitionSpec = {
+                                val enterMs = (motion.expandDurationMs * 0.55f).toInt()
+                                val exitMs = (motion.expandDurationMs * 0.35f).toInt()
+                                fadeIn(tween(enterMs)) togetherWith fadeOut(tween(exitMs))
+                            },
+                            label = "homeTab",
+                        ) { currentTab ->
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                when (currentTab) {
+                                    HomeTab.Estimate -> {
+                                        HdPrimaryButton("Расчёт сметы") { nav.navigate(Routes.ESTIMATE_HUB) }
+                                        Spacer(Modifier.height(12.dp))
+                                        HdSecondaryButton("История", onClick = { nav.navigate(Routes.HISTORY) })
+                                        Spacer(Modifier.height(12.dp))
+                                        HdSecondaryButton("Прайс-лист", onClick = { nav.navigate(Routes.PRICE) })
+                                        Spacer(Modifier.height(12.dp))
+                                        HdSecondaryButton("Настройки", onClick = { nav.navigate(Routes.SETTINGS) })
+                                    }
+                                    HomeTab.Tools -> {
+                                        ToolsHubContent(
+                                            nav = nav,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            Text(
+                "Версия ${BuildConfig.VERSION_NAME}",
+                color = HdTextSecondary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
