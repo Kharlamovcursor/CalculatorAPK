@@ -15,14 +15,6 @@ import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateTemplateLineEntity
 import ru.hdlabs.electrosmeta.data.local.entities.ServiceEntity
 import ru.hdlabs.electrosmeta.data.settings.SettingsRepository
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
-
-private const val MIN_BACKUP_PASSWORD_LENGTH = 6
 
 class BackupManager(
     private val categoryDao: CategoryDao,
@@ -78,54 +70,37 @@ class BackupManager(
         return json.encodeToString(backup)
     }
 
-    suspend fun exportEncrypted(password: CharArray): ByteArray {
-        requireBackupPassword(password)
-        val plain = buildPlainJson().toByteArray(Charsets.UTF_8)
-        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        val key = deriveKey(password, salt)
-        val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
-        val encrypted = cipher.doFinal(plain)
-        return salt + iv + encrypted
+    suspend fun exportBytes(): ByteArray = buildPlainJson().toByteArray(Charsets.UTF_8)
+
+    suspend fun preview(data: ByteArray): BackupSummary {
+        val backup = parse(data)
+        return summary(backup)
     }
 
-    suspend fun previewEncrypted(data: ByteArray, password: CharArray): BackupSummary {
-        requireBackupPassword(password)
-        val backup = decryptBackup(data, password)
-        return BackupSummary(
-            categories = backup.categories.size,
-            services = backup.services.size,
-            estimates = backup.estimates.size,
-            templates = backup.templates.size,
-        )
-    }
-
-    suspend fun importEncrypted(data: ByteArray, password: CharArray): BackupSummary {
-        requireBackupPassword(password)
-        val backup = decryptBackup(data, password)
+    suspend fun import(data: ByteArray): BackupSummary {
+        val backup = parse(data)
         applyBackup(backup)
-        return BackupSummary(
-            categories = backup.categories.size,
-            services = backup.services.size,
-            estimates = backup.estimates.size,
-            templates = backup.templates.size,
-        )
+        return summary(backup)
     }
 
-    private fun decryptBackup(data: ByteArray, password: CharArray): BackupFileV1 {
-        require(data.size > 28) { "Неверный файл резервной копии" }
-        val salt = data.copyOfRange(0, 16)
-        val iv = data.copyOfRange(16, 28)
-        val payload = data.copyOfRange(28, data.size)
-        val key = deriveKey(password, salt)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
-        val plain = cipher.doFinal(payload)
-        val backup = json.decodeFromString<BackupFileV1>(plain.decodeToString())
+    private fun parse(data: ByteArray): BackupFileV1 {
+        val text = data.toString(Charsets.UTF_8).trimStart()
+        if (!text.startsWith("{")) {
+            throw IllegalArgumentException(
+                "Этот файл сделан со старым паролем. Создайте новую копию в этой версии приложения.",
+            )
+        }
+        val backup = json.decodeFromString<BackupFileV1>(text)
         require(backup.version == 1) { "Неподдерживаемая версия: ${backup.version}" }
         return backup
     }
+
+    private fun summary(backup: BackupFileV1) = BackupSummary(
+        categories = backup.categories.size,
+        services = backup.services.size,
+        estimates = backup.estimates.size,
+        templates = backup.templates.size,
+    )
 
     private suspend fun applyBackup(backup: BackupFileV1) {
         settingsRepository.update { backup.settings.toAppSettings() }
@@ -183,19 +158,6 @@ class BackupManager(
                 ),
             )
         }
-    }
-
-    private fun requireBackupPassword(password: CharArray) {
-        require(password.size >= MIN_BACKUP_PASSWORD_LENGTH) {
-            "Пароль резервной копии — не короче $MIN_BACKUP_PASSWORD_LENGTH символов"
-        }
-    }
-
-    private fun deriveKey(password: CharArray, salt: ByteArray): SecretKeySpec {
-        val spec = PBEKeySpec(password, salt, 120_000, 256)
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val key = factory.generateSecret(spec).encoded
-        return SecretKeySpec(key, "AES")
     }
 }
 

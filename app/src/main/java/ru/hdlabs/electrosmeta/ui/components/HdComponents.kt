@@ -3,6 +3,7 @@ package ru.hdlabs.electrosmeta.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -234,6 +235,65 @@ fun HdSecondaryButton(
         ),
     ) {
         Text(text, color = HdTextPrimary)
+    }
+}
+
+enum class HdSavePhase { Idle, Saving, Saved }
+
+@Composable
+fun HdSaveButton(
+    idleText: String,
+    phase: HdSavePhase,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when (phase) {
+            HdSavePhase.Saved -> 1.05f
+            HdSavePhase.Saving -> 0.98f
+            HdSavePhase.Idle -> if (pressed) 0.90f else 1f
+        },
+        animationSpec = if (phase == HdSavePhase.Saved) {
+            spring(dampingRatio = 0.5f, stiffness = 420f)
+        } else {
+            tween(90)
+        },
+        label = "saveBtnScale",
+    )
+    val label = when (phase) {
+        HdSavePhase.Saving -> "Сохранение…"
+        HdSavePhase.Saved -> "Сохранено"
+        HdSavePhase.Idle -> idleText
+    }
+    val container = when (phase) {
+        HdSavePhase.Saved -> HdBlue.copy(alpha = 0.45f)
+        HdSavePhase.Saving -> HdPanel
+        HdSavePhase.Idle -> if (pressed) HdOrange.copy(alpha = 0.55f) else HdPanel
+    }
+    val border = when (phase) {
+        HdSavePhase.Saved -> BorderStroke(3.dp, HdBlue)
+        HdSavePhase.Saving -> BorderStroke(2.dp, HdTextSecondary.copy(alpha = 0.45f))
+        HdSavePhase.Idle -> BorderStroke(
+            if (pressed) 3.dp else 1.dp,
+            if (pressed) HdOrange else HdBlue.copy(alpha = 0.4f),
+        )
+    }
+    Button(
+        onClick = onClick,
+        enabled = phase != HdSavePhase.Saving,
+        interactionSource = interactionSource,
+        modifier = modifier.fillMaxWidth().scale(scale),
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(vertical = 14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = container,
+            disabledContainerColor = container,
+        ),
+        border = border,
+    ) {
+        Text(label, color = HdTextPrimary)
     }
 }
 

@@ -148,6 +148,8 @@ import ru.hdlabs.electrosmeta.ui.components.categoryHighlightColors
 import ru.hdlabs.electrosmeta.ui.components.HdPrimaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdQuickUnits
 import ru.hdlabs.electrosmeta.ui.components.HdUnitChoiceRow
+import ru.hdlabs.electrosmeta.ui.components.HdSaveButton
+import ru.hdlabs.electrosmeta.ui.components.HdSavePhase
 import ru.hdlabs.electrosmeta.ui.components.HdSecondaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdDialogFieldColumn
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
@@ -1296,18 +1298,19 @@ private fun SettingsScreen(nav: NavHostController) {
     val app = LocalContext.current.applicationContext as ElectrosmetaApplication
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val scope = rememberCoroutineScope()
-    var backupPassword by remember { mutableStateOf("") }
     var pendingImport by remember { mutableStateOf<ByteArray?>(null) }
     var importPreview by remember { mutableStateOf<BackupSummary?>(null) }
     var importMessage by remember { mutableStateOf("") }
     var confirmClear by remember { mutableStateOf(false) }
     var taxLabel by remember(settings) { mutableStateOf(settings.taxLabel) }
     var taxPercent by remember(settings) { mutableStateOf(settings.defaultTaxPercent.toString()) }
+    var taxSavePhase by remember { mutableStateOf(HdSavePhase.Idle) }
+    var showAppearance by remember { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             try {
-                val bytes = app.container.backupManager.exportEncrypted(backupPassword.toCharArray())
+                val bytes = app.container.backupManager.exportBytes()
                 app.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
                 importMessage = "Резервная копия сохранена"
             } catch (e: Exception) {
@@ -1320,7 +1323,7 @@ private fun SettingsScreen(nav: NavHostController) {
         scope.launch {
             val bytes = app.contentResolver.openInputStream(uri)?.readBytes() ?: return@launch
             try {
-                importPreview = app.container.backupManager.previewEncrypted(bytes, backupPassword.toCharArray())
+                importPreview = app.container.backupManager.preview(bytes)
                 pendingImport = bytes
             } catch (e: Exception) {
                 importMessage = e.message ?: "Ошибка чтения копии"
@@ -1353,77 +1356,6 @@ private fun SettingsScreen(nav: NavHostController) {
             })
         }
         Spacer(Modifier.height(16.dp))
-        Text("Анимация интерфейса", color = HdTextPrimary)
-        Text(
-            "Кнопки, раскрытие блоков, переходы между экранами и подсветка категорий. Фон настраивается отдельно выше.",
-            color = HdTextSecondary,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        listOf(
-            UiMotionLevel.Subtle to "Спокойно (как раньше)",
-            UiMotionLevel.Balanced to "Сбалансировано (рекомендуется)",
-            UiMotionLevel.Expressive to "Выразительно",
-        ).forEach { (level, label) ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable {
-                        scope.launch {
-                            app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
-                        }
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = settings.uiMotionLevel == level,
-                    onCheckedChange = {
-                        scope.launch {
-                            app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
-                        }
-                    },
-                    colors = CheckboxDefaults.colors(checkedColor = HdBlue),
-                )
-                Text(label, color = HdTextPrimary)
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Подсветка категории в смете", color = HdTextPrimary)
-        Text(
-            "Как выделяется категория после добавления позиции или в выборе из прайса.",
-            color = HdTextSecondary,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        listOf(
-            CategoryHighlightStyle.SoftGlow to "Мягкое свечение (синий, спокойно)",
-            CategoryHighlightStyle.PulseBorder to "Пульсирующая рамка",
-            CategoryHighlightStyle.GradientRing to "Градиент синий → оранжевый",
-            CategoryHighlightStyle.Noticeable to "Заметнее (оранжевая рамка)",
-        ).forEach { (style, label) ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable {
-                        scope.launch {
-                            app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
-                        }
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = settings.categoryHighlightStyle == style,
-                    onCheckedChange = {
-                        scope.launch {
-                            app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
-                        }
-                    },
-                    colors = CheckboxDefaults.colors(checkedColor = HdBlue),
-                )
-                Text(label, color = HdTextPrimary)
-            }
-        }
-        Spacer(Modifier.height(16.dp))
         HdCard {
             Text("Налог в сметах", color = HdTextPrimary)
             Text(
@@ -1433,14 +1365,18 @@ private fun SettingsScreen(nav: NavHostController) {
             )
             HdTextField(taxLabel, { taxLabel = it }, "Подпись (например «Без НДС»)")
             HdTextField(taxPercent, { taxPercent = it }, "Налог, % (0 = без налога)")
-            HdSecondaryButton("Сохранить налог") {
+            HdSaveButton("Сохранить налог", taxSavePhase) {
                 scope.launch {
+                    taxSavePhase = HdSavePhase.Saving
                     app.container.settingsRepository.update {
                         it.copy(
                             taxLabel = taxLabel,
                             defaultTaxPercent = taxPercent.replace(',', '.').toDoubleOrNull() ?: 0.0,
                         )
                     }
+                    taxSavePhase = HdSavePhase.Saved
+                    delay(1400)
+                    taxSavePhase = HdSavePhase.Idle
                 }
             }
         }
@@ -1455,8 +1391,11 @@ private fun SettingsScreen(nav: NavHostController) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        HdTextField(backupPassword, { backupPassword = it }, "Пароль резервной копии (от 6 символов)")
-        Spacer(Modifier.height(8.dp))
+        Text(
+            "Файл без пароля: прайс, шаблоны, сметы и настройки. Храните его у себя.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         HdSecondaryButton("Экспорт резервной копии") {
             exportLauncher.launch("hdlabs-electrosmeta-backup.hdeb")
         }
@@ -1469,7 +1408,95 @@ private fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(16.dp))
         HdSecondaryButton("Удалить все сметы из истории") { confirmClear = true }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
+        Text(
+            if (showAppearance) "Скрыть оформление" else "Оформление",
+            color = HdTextSecondary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAppearance = !showAppearance }
+                .padding(vertical = 8.dp),
+            textAlign = TextAlign.Center,
+        )
+        AnimatedVisibility(
+            visible = showAppearance,
+            enter = expandVertically(tween(220)) + fadeIn(tween(180)),
+            exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
+        ) {
+            Column {
+                Text("Анимация интерфейса", color = HdTextPrimary)
+                Text(
+                    "Кнопки, раскрытие блоков, переходы между экранами и подсветка категорий.",
+                    color = HdTextSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                listOf(
+                    UiMotionLevel.Subtle to "Спокойно (как раньше)",
+                    UiMotionLevel.Balanced to "Сбалансировано (рекомендуется)",
+                    UiMotionLevel.Expressive to "Выразительно",
+                ).forEach { (level, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                scope.launch {
+                                    app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = settings.uiMotionLevel == level,
+                            onCheckedChange = {
+                                scope.launch {
+                                    app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
+                                }
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = HdBlue),
+                        )
+                        Text(label, color = HdTextPrimary)
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Подсветка категории в смете", color = HdTextPrimary)
+                Text(
+                    "Как выделяется категория после добавления позиции или в выборе из прайса.",
+                    color = HdTextSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                listOf(
+                    CategoryHighlightStyle.SoftGlow to "Мягкое свечение (синий, спокойно)",
+                    CategoryHighlightStyle.PulseBorder to "Пульсирующая рамка",
+                    CategoryHighlightStyle.GradientRing to "Градиент синий → оранжевый",
+                    CategoryHighlightStyle.Noticeable to "Заметнее (оранжевая рамка)",
+                ).forEach { (style, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable {
+                                scope.launch {
+                                    app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = settings.categoryHighlightStyle == style,
+                            onCheckedChange = {
+                                scope.launch {
+                                    app.container.settingsRepository.update { it.copy(categoryHighlightStyle = style) }
+                                }
+                            },
+                            colors = CheckboxDefaults.colors(checkedColor = HdBlue),
+                        )
+                        Text(label, color = HdTextPrimary)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
         UpdateCheckSection()
     }
 
@@ -1489,7 +1516,7 @@ private fun SettingsScreen(nav: NavHostController) {
                 HdPrimaryButton("Заменить данные") {
                     scope.launch {
                         pendingImport?.let {
-                            app.container.backupManager.importEncrypted(it, backupPassword.toCharArray())
+                            app.container.backupManager.import(it)
                         }
                         importPreview = null
                         pendingImport = null
@@ -1541,6 +1568,7 @@ private fun AboutScreen(nav: NavHostController) {
     var pdfTitle by remember(settings) { mutableStateOf(settings.pdfTitle) }
     var pdfIntro by remember(settings) { mutableStateOf(settings.pdfIntro) }
     var pdfFooter by remember(settings) { mutableStateOf(settings.pdfFooter) }
+    var settingsSavePhase by remember { mutableStateOf(HdSavePhase.Idle) }
 
     HdScaffold(title = "О приложении", onBack = { nav.popBackStack() }) {
         HdTextField(company, { company = it }, "Название / мастер")
@@ -1554,8 +1582,9 @@ private fun AboutScreen(nav: NavHostController) {
         HdTextField(pdfTitle, { pdfTitle = it }, "Заголовок PDF")
         HdTextField(pdfIntro, { pdfIntro = it }, "Вступление PDF")
         HdTextField(pdfFooter, { pdfFooter = it }, "Подвал PDF")
-        HdPrimaryButton("Сохранить настройки") {
+        HdSaveButton("Сохранить настройки", settingsSavePhase) {
             scope.launch {
+                settingsSavePhase = HdSavePhase.Saving
                 app.container.settingsRepository.update {
                     it.copy(
                         companyName = company,
@@ -1571,6 +1600,9 @@ private fun AboutScreen(nav: NavHostController) {
                         pdfFooter = pdfFooter,
                     )
                 }
+                settingsSavePhase = HdSavePhase.Saved
+                delay(1400)
+                settingsSavePhase = HdSavePhase.Idle
             }
         }
     }

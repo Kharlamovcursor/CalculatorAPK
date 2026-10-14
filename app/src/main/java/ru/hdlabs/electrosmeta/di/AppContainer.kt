@@ -43,6 +43,7 @@ class AppContainer(context: Context) {
     init {
         scope.launch {
             DefaultPriceSeed.seedIfEmpty(database.categoryDao(), database.serviceDao())
+            settingsRepository.pinFixedAppearance()
         }
     }
 }

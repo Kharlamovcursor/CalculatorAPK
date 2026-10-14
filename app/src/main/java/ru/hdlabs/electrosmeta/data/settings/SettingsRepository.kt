@@ -85,6 +85,15 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun pinFixedAppearance() {
+        context.dataStore.edit { prefs ->
+            if (prefs[Keys.APPEARANCE_PINNED] == true) return@edit
+            prefs[Keys.UI_MOTION_LEVEL] = UiMotionLevel.Balanced.name
+            prefs[Keys.CATEGORY_HIGHLIGHT] = CategoryHighlightStyle.GradientRing.name
+            prefs[Keys.APPEARANCE_PINNED] = true
+        }
+    }
+
     private object Keys {
         val ANIM_SPEED = intPreferencesKey("anim_speed")
         val ANIM_ENABLED = booleanPreferencesKey("anim_enabled")
@@ -105,5 +114,6 @@ class SettingsRepository(private val context: Context) {
         val SHOW_COMPLEXITY = booleanPreferencesKey("show_complexity")
         val CATEGORY_HIGHLIGHT = stringPreferencesKey("category_highlight")
         val UI_MOTION_LEVEL = stringPreferencesKey("ui_motion_level")
+        val APPEARANCE_PINNED = booleanPreferencesKey("appearance_pinned_v32")
     }
 }

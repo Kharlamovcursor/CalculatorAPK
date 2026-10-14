@@ -12,7 +12,8 @@ enum class CategoryHighlightStyle {
             PulseBorder.name -> PulseBorder
             GradientRing.name -> GradientRing
             Noticeable.name -> Noticeable
-            else -> SoftGlow
+            SoftGlow.name -> SoftGlow
+            else -> GradientRing
         }
     }
 }
