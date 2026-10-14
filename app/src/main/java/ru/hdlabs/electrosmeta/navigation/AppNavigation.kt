@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package ru.hdlabs.electrosmeta.navigation
 
 import android.content.Intent
@@ -57,6 +59,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -113,6 +119,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlin.OptIn
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -500,8 +508,20 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
         )
         Spacer(Modifier.height(4.dp))
         val groups = buildTemplateLineGroups(state, categoryOrder)
+        val templateCategoryFocusRequesters = remember(groups.map { it.categoryKey }) {
+            groups.associate { it.categoryKey to BringIntoViewRequester() }
+        }
         HdCard(Modifier.padding(bottom = 12.dp)) {
             Text("Состав шаблона", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+            CategoryOverviewBar(
+                groups = groups,
+                expandedKeys = expandedKeys,
+                onExpandedKeysChange = { expandedKeys = it },
+                highlightStyle = settings.categoryHighlightStyle,
+                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
+                focusRequesters = templateCategoryFocusRequesters,
+                scope = scope,
+            )
             if (groups.isEmpty()) {
                 Text(
                     "Пока пусто. Добавьте работы из прайса или свою позицию — как в расчёте сметы.",
@@ -562,6 +582,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
             }
             groups.forEachIndexed { index, group ->
                 key(group.categoryKey) {
+                Column(Modifier.bringIntoViewRequester(templateCategoryFocusRequesters.getValue(group.categoryKey))) {
                 MainCategoryLinesSection(
                     group = group,
                     expanded = expandedKeys.contains(group.categoryKey),
@@ -589,6 +610,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     },
                     onReorderSettled = { vm.reorderCategories(categoryOrder) },
                 )
+                }
                 }
             }
         }
@@ -1879,9 +1901,22 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
             }
             lastLineCount = state.lines.size
         }
+        val estimateCategoryFocusRequesters = remember(mainLineGroups.map { it.categoryKey }) {
+            mainLineGroups.associate { it.categoryKey to BringIntoViewRequester() }
+        }
         HdCard(Modifier.padding(bottom = 12.dp)) {
             Text("Услуги", color = HdTextPrimary, modifier = Modifier.padding(bottom = 8.dp))
+            CategoryOverviewBar(
+                groups = mainLineGroups,
+                expandedKeys = expandedMainCategoryKeys,
+                onExpandedKeysChange = { expandedMainCategoryKeys = it },
+                highlightStyle = settings.categoryHighlightStyle,
+                animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
+                focusRequesters = estimateCategoryFocusRequesters,
+                scope = scope,
+            )
             mainLineGroups.forEach { group ->
+                Column(Modifier.bringIntoViewRequester(estimateCategoryFocusRequesters.getValue(group.categoryKey))) {
                     MainCategoryLinesSection(
                         group = group,
                         expanded = expandedMainCategoryKeys.contains(group.categoryKey),
@@ -1901,6 +1936,7 @@ private fun EstimateScreen(nav: NavHostController, estimateId: Long) {
                     },
                     onDeleteLine = { vm.removeLine(it) },
                 )
+                }
             }
             val customInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val customPressed by customInteraction.collectIsPressedAsState()
@@ -2407,6 +2443,75 @@ private fun categoryTitle(state: EstimateEditorUiState, categoryKey: Long): Stri
 private enum class ServicePickerStep { Categories, Services, Confirming }
 
 @Composable
+private fun CategoryOverviewBar(
+    groups: List<MainLineGroup>,
+    expandedKeys: Set<Long>,
+    onExpandedKeysChange: (Set<Long>) -> Unit,
+    highlightStyle: CategoryHighlightStyle,
+    animationEnabled: Boolean,
+    focusRequesters: Map<Long, BringIntoViewRequester>,
+    scope: CoroutineScope,
+) {
+    if (groups.isEmpty()) return
+    val categoryKeys = groups.map { it.categoryKey }.toSet()
+    val totalLines = groups.sumOf { it.lines.size }
+    val allExpanded = categoryKeys.all { expandedKeys.contains(it) }
+    val toggleLabel = if (allExpanded) "Свернуть все" else "Развернуть все"
+    val chipScroll = rememberScrollState()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "${groups.size} кат. · $totalLines поз.",
+            color = HdTextSecondary,
+        )
+        Text(
+            toggleLabel,
+            color = HdOrange,
+            modifier = Modifier.clickable {
+                onExpandedKeysChange(if (allExpanded) emptySet() else categoryKeys)
+            },
+        )
+    }
+    if (groups.size >= 2) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(chipScroll)
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            groups.forEach { group ->
+                val shortTitle = if (group.title.length > 22) {
+                    group.title.take(20) + "…"
+                } else {
+                    group.title
+                }
+                ServiceCategoryChip(
+                    name = "$shortTitle (${group.lines.size})",
+                    selected = expandedKeys.contains(group.categoryKey),
+                    highlightStyle = highlightStyle,
+                    animationEnabled = animationEnabled,
+                    fillWidth = false,
+                    onClick = {
+                        onExpandedKeysChange(setOf(group.categoryKey))
+                        focusRequesters[group.categoryKey]?.let { requester ->
+                            scope.launch { requester.bringIntoView() }
+                        }
+                    },
+                )
+            }
+        }
+    } else {
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+@Composable
 private fun MainCategoryLinesSection(
     group: MainLineGroup,
     expanded: Boolean,
@@ -2745,6 +2850,7 @@ private fun ServiceCategoryChip(
     selected: Boolean,
     highlightStyle: CategoryHighlightStyle,
     animationEnabled: Boolean,
+    fillWidth: Boolean = true,
     onClick: () -> Unit,
 ) {
     val motion = LocalHdMotion.current
@@ -2760,7 +2866,7 @@ private fun ServiceCategoryChip(
     val chipScale by animateFloatAsState(if (chipPressed) 0.97f else 1f, label = "chipScale")
     Row(
         Modifier
-            .fillMaxWidth()
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .padding(vertical = 4.dp)
             .scale(chipScale)
             .clip(shape)
