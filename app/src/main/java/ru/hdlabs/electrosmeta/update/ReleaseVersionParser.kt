@@ -1,6 +1,9 @@
 package ru.hdlabs.electrosmeta.update
 
 internal object ReleaseVersionParser {
+    /** Первый `versionCode` линейки 1.1.x в APK (см. `app/build.gradle.kts`). */
+    const val VERSION_1_1_BASE_CODE = 36
+
     fun parseVersionCode(tag: String, fallback: Int): Int {
         val stripped = tag.trim().removePrefix("v").removePrefix("V")
         stripped.toIntOrNull()?.let { return it }
@@ -16,5 +19,21 @@ internal object ReleaseVersionParser {
         return parts.take(3).fold(0) { acc, part ->
             acc * 1000 + (part.toIntOrNull()?.coerceIn(0, 999) ?: 0)
         }
+    }
+
+    /**
+     * Подпись версии для диалога обновления: сначала [releaseName] с GitHub, иначе по тегу и [versionCode].
+     */
+    fun displayVersionName(tagName: String, versionCode: Int, releaseName: String?): String {
+        releaseName?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val stripped = tagName.trim().removePrefix("v").removePrefix("V")
+        stripped.toIntOrNull()?.let { code ->
+            return if (code >= VERSION_1_1_BASE_CODE) {
+                "1.1.${code - VERSION_1_1_BASE_CODE}"
+            } else {
+                "1.0.$code"
+            }
+        }
+        return tagName
     }
 }

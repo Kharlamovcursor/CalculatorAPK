@@ -12,6 +12,7 @@ import java.io.File
 @Serializable
 data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
+    val name: String? = null,
     val body: String? = null,
     val assets: List<GitHubAsset> = emptyList(),
 )
@@ -69,17 +70,15 @@ class GitHubUpdateSource(
         val remoteCode = ReleaseVersionParser.parseVersionCode(release.tagName, BuildConfig.VERSION_CODE)
         if (remoteCode <= currentVersionCode) return null
         return UpdateInfo(
-            versionName = displayVersion(release.tagName, remoteCode),
+            versionName = ReleaseVersionParser.displayVersionName(
+                release.tagName,
+                remoteCode,
+                release.name,
+            ),
             changelog = release.body ?: "",
             apkUrl = apk.downloadUrl,
             apkFileName = apk.name,
         )
-    }
-
-    private fun displayVersion(tag: String, versionCode: Int): String {
-        val stripped = tag.trim().removePrefix("v").removePrefix("V")
-        if (stripped.toIntOrNull() != null) return "1.0.$versionCode"
-        return tag
     }
 
 }
