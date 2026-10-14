@@ -533,10 +533,10 @@ fun RcdToolScreen(onBack: () -> Unit) {
 @Composable
 fun CableOrderToolScreen(onBack: () -> Unit) {
     ToolScreenScaffold("Кабель на заказ", onBack) {
-        var lengths by remember { mutableStateOf("12\n8\n5") }
-        var runs by remember { mutableStateOf("1") }
-        var reserve by remember { mutableStateOf("10") }
-        var roll by remember { mutableStateOf("100") }
+        var lengths by remember { mutableStateOf("") }
+        var runs by remember { mutableStateOf("") }
+        var reserve by remember { mutableStateOf("") }
+        var roll by remember { mutableStateOf("") }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var liveRecalc by remember { mutableStateOf(false) }
@@ -546,7 +546,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
                 .mapNotNull { parseElectricalDouble(it) }
                 .filter { it > 0 }
             val rCount = parseElectricalDouble(runs)?.toInt() ?: 0
-            val res = parseElectricalDouble(reserve) ?: 10.0
+            val res = parseElectricalDouble(reserve) ?: 0.0
             val rollM = parseElectricalDouble(roll)
             val r = ElectricalCalculators.cableOrder(CableOrderInput(segs, rCount, res, rollM))
             resultText = when {
@@ -555,19 +555,29 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
                     "Итого ≈ ${"%.1f".format(r.totalMeters)} м, бухт по ${rollM?.toInt()} м: ${r.rollsCount} шт."
                 else -> "Итого ≈ ${"%.1f".format(r.totalMeters)} м."
             }
-            notes = r?.let { listOf(it.recommendation) } ?: emptyList()
+            notes = when {
+                r != null -> r.notes + r.recommendation
+                segs.isEmpty() -> listOf("Введите длину участков трассы, м (каждый участок — с новой строки).")
+                rCount <= 0 -> listOf("Укажите число одинаковых трасс (целое больше 0).")
+                else -> emptyList()
+            }
         }
 
         val inputKey = remember(lengths, runs, reserve, roll) { listOf(lengths, runs, reserve, roll) }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        Text(
+            "Строки суммируются в одну трассу. Три линии по 12 м → одна строка «12» и «3 трассы», не три строки 12+12+12.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
         HdTextField(
             lengths,
             { lengths = it },
-            "Длины участков, м (каждая с новой строки)",
+            "Участки одной трассы, м (с новой строки)",
         )
-        HdTextField(runs, { runs = it }, "Число одинаковых трасс")
-        HdTextField(reserve, { reserve = it }, "Запас, %")
+        HdTextField(runs, { runs = it }, "Сколько таких одинаковых трасс")
+        HdTextField(reserve, { reserve = it }, "Запас, % (пусто = 0)")
         HdTextField(roll, { roll = it }, "Длина бухты, м (необяз.)")
         ToolCalcButton("Рассчитать") {
             liveRecalc = true
@@ -651,17 +661,19 @@ private fun ToolCalcButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun ToolResultBlock(result: String?, notes: List<String>) {
     val bringIntoView = remember { BringIntoViewRequester() }
-    LaunchedEffect(result) {
-        if (result != null) {
+    LaunchedEffect(result, notes) {
+        if (result != null || notes.isNotEmpty()) {
             delay(120)
             bringIntoView.bringIntoView()
         }
     }
-    if (result != null) {
+    if (result != null || notes.isNotEmpty()) {
         Spacer(Modifier.height(16.dp))
         HdCard(Modifier.bringIntoViewRequester(bringIntoView)) {
-            Text("Результат", color = HdOrange)
-            Text(result, color = HdTextPrimary, modifier = Modifier.padding(top = 8.dp))
+            Text(if (result != null) "Результат" else "Подсказка", color = HdOrange)
+            if (result != null) {
+                Text(result, color = HdTextPrimary, modifier = Modifier.padding(top = 8.dp))
+            }
             notes.forEachIndexed { index, note ->
                 val color = if (index == 0 && note.startsWith("Итог:")) HdOrange else HdTextSecondary
                 Text(

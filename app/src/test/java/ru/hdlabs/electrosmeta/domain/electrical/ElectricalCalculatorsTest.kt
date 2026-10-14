@@ -202,6 +202,70 @@ class ElectricalCalculatorsTest {
     }
 
     @Test
+    fun cableOrder12mThreeIdenticalTraces() {
+        val r = ElectricalCalculators.cableOrder(
+            CableOrderInput(listOf(12.0), runsCount = 3, reservePercent = 0.0, rollLengthM = null),
+        )
+        assertNotNull(r)
+        assertEquals(36.0, r!!.totalMeters, 0.01)
+    }
+
+    @Test
+    fun cableOrderDoesNotSumHiddenDemoSegments() {
+        val wrong = ElectricalCalculators.cableOrder(
+            CableOrderInput(listOf(12.0, 8.0, 5.0), runsCount = 3, reservePercent = 10.0, rollLengthM = null),
+        )
+        val right = ElectricalCalculators.cableOrder(
+            CableOrderInput(listOf(12.0), runsCount = 3, reservePercent = 10.0, rollLengthM = null),
+        )
+        assertNotNull(wrong)
+        assertNotNull(right)
+        assertEquals(82.5, wrong!!.totalMeters, 0.01)
+        assertEquals(39.6, right!!.totalMeters, 0.01)
+    }
+
+    @Test
+    fun voltageDropSinglePhaseFormula() {
+        val r = ElectricalCalculators.voltageDrop(
+            VoltageDropInput(10.0, 20.0, 2.5, ConductorMaterial.Copper, PhaseMode.Single, 220.0),
+        )
+        assertNotNull(r)
+        assertEquals(2.8, r!!.dropVolts, 0.05)
+        assertEquals(1.27, r.dropPercent, 0.05)
+        assertTrue(r.withinLimit)
+    }
+
+    @Test
+    fun threeCablesInConduitDeratesAmpacity() {
+        val oneTwo = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                18.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                null,
+                PhaseMode.Single,
+                220.0,
+                cablesInConduit = CablesInConduit.OneTwo,
+            ),
+        )
+        val threeFour = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                18.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                null,
+                PhaseMode.Single,
+                220.0,
+                cablesInConduit = CablesInConduit.ThreeFour,
+            ),
+        )
+        assertNotNull(oneTwo)
+        assertNotNull(threeFour)
+        assertEquals(2.5, oneTwo!!.recommendedSectionMm2, 0.0)
+        assertEquals(4.0, threeFour!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
     fun lightingPower() {
         val r = ElectricalCalculators.lightingPower(LightingPowerInput(20.0, 15.0))
         assertNotNull(r)

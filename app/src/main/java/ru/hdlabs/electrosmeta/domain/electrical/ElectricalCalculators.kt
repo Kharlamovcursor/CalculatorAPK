@@ -149,6 +149,7 @@ data class CableOrderResult(
     val totalMeters: Double,
     val rollsCount: Int?,
     val recommendation: String,
+    val notes: List<String> = emptyList(),
 )
 
 object ElectricalCalculators {
@@ -478,11 +479,18 @@ object ElectricalCalculators {
         if (input.runsCount <= 0 || input.segmentLengthsM.isEmpty()) return null
         val sum = input.segmentLengthsM.sum()
         if (sum <= 0) return null
-        val reserve = input.reservePercent.coerceIn(0.0, 50.0) / 100.0
+        val reservePct = input.reservePercent.coerceIn(0.0, 50.0)
+        val reserve = reservePct / 100.0
         val total = sum * input.runsCount * (1.0 + reserve)
         val rolls = input.rollLengthM?.takeIf { it > 0 }?.let { roll ->
             ceil(total / roll).toInt()
         }
+        val notes = mutableListOf<String>()
+        if (input.segmentLengthsM.size > 1) {
+            val parts = input.segmentLengthsM.joinToString(" + ") { "%.0f".format(it) }
+            notes += "Участки одной трассы: $parts = ${"%.1f".format(sum)} м."
+        }
+        notes += "Расчёт: ${"%.1f".format(sum)} м × ${input.runsCount} трассы × (1 + ${"%.0f".format(reservePct)}% запас) = ${"%.1f".format(total)} м."
         val recommendation = buildString {
             append("Итог: закажите ≈${"%.0f".format(total)} м с учётом запаса. ")
             if (rolls != null) {
@@ -491,7 +499,7 @@ object ElectricalCalculators {
                 append("Добавьте длину бухты, чтобы посчитать число отрезков.")
             }
         }
-        return CableOrderResult(total, rolls, recommendation)
+        return CableOrderResult(total, rolls, recommendation, notes)
     }
 
     private data class Ampacity(val section: Double, val maxAmps: Double)
@@ -522,7 +530,7 @@ object ElectricalCalculators {
             CableInstallMode.OpenAir -> 1.0
             CableInstallMode.InConduit -> when (cablesInConduit) {
                 CablesInConduit.OneTwo -> 1.0
-                CablesInConduit.ThreeFour -> 0.8 / 0.9
+                CablesInConduit.ThreeFour -> 0.8
             }
         }
 
