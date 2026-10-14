@@ -4,7 +4,7 @@ data class AppSettings(
     val animationSpeedPercent: Int = 115,
     val animationEnabled: Boolean = true,
     val powerSaveMode: Boolean = false,
-    val uiMotionLevel: UiMotionLevel = UiMotionLevel.Balanced,
+    val uiMotionLevel: UiMotionLevel = UiMotionLevel.Expressive,
     val companyName: String = "HDLabs",
     val performerTitle: String = "Электромонтажные работы",
     val inn: String = "",

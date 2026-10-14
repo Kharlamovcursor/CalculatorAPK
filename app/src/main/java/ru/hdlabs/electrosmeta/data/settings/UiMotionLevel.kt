@@ -10,7 +10,8 @@ enum class UiMotionLevel {
         fun fromStorage(value: String?): UiMotionLevel = when (value) {
             Subtle.name -> Subtle
             Expressive.name -> Expressive
-            else -> Balanced
+            Balanced.name -> Balanced
+            else -> Expressive
         }
     }
 }

@@ -87,8 +87,8 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun pinFixedAppearance() {
         context.dataStore.edit { prefs ->
+            prefs[Keys.UI_MOTION_LEVEL] = UiMotionLevel.Expressive.name
             if (prefs[Keys.APPEARANCE_PINNED] == true) return@edit
-            prefs[Keys.UI_MOTION_LEVEL] = UiMotionLevel.Balanced.name
             prefs[Keys.CATEGORY_HIGHLIGHT] = CategoryHighlightStyle.GradientRing.name
             prefs[Keys.APPEARANCE_PINNED] = true
         }

@@ -144,7 +144,6 @@ import ru.hdlabs.electrosmeta.update.UpdateInfo
 import ru.hdlabs.electrosmeta.pdf.PdfStorageHelper
 import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
 import ru.hdlabs.electrosmeta.data.settings.CategoryHighlightStyle
-import ru.hdlabs.electrosmeta.data.settings.UiMotionLevel
 import ru.hdlabs.electrosmeta.ui.motion.LocalHdMotion
 import ru.hdlabs.electrosmeta.ui.motion.resolveHdMotion
 import ru.hdlabs.electrosmeta.ui.components.HdCard
@@ -445,6 +444,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by app.container.settingsRepository.settings.collectAsStateWithLifecycle(AppSettings())
     val motion = LocalHdMotion.current
+    val scope = rememberCoroutineScope()
     val template = state.template
     val snackbarHostState = remember { SnackbarHostState() }
     var title by remember(template?.id) { mutableStateOf(template?.name ?: "") }
@@ -457,7 +457,14 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
     var customPrice by remember { mutableStateOf("") }
     var customQty by remember { mutableStateOf("1") }
     var expandedKeys by remember { mutableStateOf(setOf<Long>()) }
+    var highlightedTemplateCategoryKey by remember { mutableStateOf<Long?>(null) }
     var categoryOrder by remember(state.categoryOrder) { mutableStateOf(state.categoryOrder) }
+    LaunchedEffect(highlightedTemplateCategoryKey) {
+        if (highlightedTemplateCategoryKey != null) {
+            delay(4000)
+            highlightedTemplateCategoryKey = null
+        }
+    }
     LaunchedEffect(state.categoryOrder) {
         if (!templateLineReorderState.isDragging) categoryOrder = state.categoryOrder
     }
@@ -538,9 +545,18 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                     highlightStyle = settings.categoryHighlightStyle,
                     animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
                     onAddServices = { services, key ->
+                        val keys = services.map { it.categoryId }.toSet()
+                        val highlight = keys.firstOrNull() ?: key
                         vm.addServices(services, key)
-                        expandedKeys = expandedKeys + key
+                        expandedKeys = expandedKeys + keys + highlight
+                        highlightedTemplateCategoryKey = highlight
                         showServicePicker = false
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                "✓ Добавлено в «${categoryTitleFromPrice(state.categories, state.favorites, highlight)}»: ${services.size} поз.",
+                                duration = SnackbarDuration.Short,
+                            )
+                        }
                     },
                 )
             }
@@ -549,7 +565,7 @@ private fun TemplateEditScreen(nav: NavHostController, templateId: Long) {
                 MainCategoryLinesSection(
                     group = group,
                     expanded = expandedKeys.contains(group.categoryKey),
-                    highlighted = false,
+                    highlighted = highlightedTemplateCategoryKey == group.categoryKey,
                     highlightStyle = settings.categoryHighlightStyle,
                     animationEnabled = settings.animationEnabled && !settings.powerSaveMode,
                     onToggleExpand = {
@@ -1434,41 +1450,6 @@ private fun SettingsScreen(nav: NavHostController) {
                 Spacer(Modifier.height(12.dp))
                 AppearancePreview(highlightStyle = settings.categoryHighlightStyle)
                 Spacer(Modifier.height(16.dp))
-                Text("Анимация интерфейса", color = HdTextPrimary)
-                Text(
-                    "Кнопки, раскрытие блоков, переходы между экранами и подсветка категорий.",
-                    color = HdTextSecondary,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-                listOf(
-                    UiMotionLevel.Subtle to "Спокойно (как раньше)",
-                    UiMotionLevel.Balanced to "Сбалансировано (рекомендуется)",
-                    UiMotionLevel.Expressive to "Выразительно",
-                ).forEach { (level, label) ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable {
-                                scope.launch {
-                                    app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
-                                }
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = settings.uiMotionLevel == level,
-                            onCheckedChange = {
-                                scope.launch {
-                                    app.container.settingsRepository.update { it.copy(uiMotionLevel = level) }
-                                }
-                            },
-                            colors = CheckboxDefaults.colors(checkedColor = HdBlue),
-                        )
-                        Text(label, color = HdTextPrimary)
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
                 Text("Подсветка категории в смете", color = HdTextPrimary)
                 Text(
                     "Как выделяется категория после добавления позиции или в выборе из прайса.",
@@ -1564,35 +1545,15 @@ private fun SettingsScreen(nav: NavHostController) {
 @Composable
 private fun AppearancePreview(highlightStyle: CategoryHighlightStyle) {
     val motion = LocalHdMotion.current
-    var expanded by remember(motion.expandDurationMs) { mutableStateOf(true) }
-    LaunchedEffect(motion.expandDurationMs) {
-        while (true) {
-            delay(motion.expandDurationMs.toLong().coerceAtLeast(80L) + 420L)
-            expanded = !expanded
-        }
-    }
-    val press = rememberInfiniteTransition(label = "appearancePress")
-    val demoScale by press.animateFloat(
-        initialValue = 1f,
-        targetValue = motion.buttonPressScale,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = (motion.buttonPressDurationMs * 3).coerceAtLeast(180),
-                easing = androidx.compose.animation.core.FastOutSlowInEasing,
-            ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "appearancePressScale",
-    )
     val highlight = categoryHighlightColors(
         active = true,
         style = highlightStyle,
         animationEnabled = true,
-        expanded = true,
+        expanded = false,
         pulseStrength = motion.highlightPulseStrength,
     )
     val shape = RoundedCornerShape(12.dp)
-    Text("Так выглядит выбранный режим", color = HdTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
+    Text("Так выглядит подсветка категории", color = HdTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
     Column(
         Modifier
             .fillMaxWidth()
@@ -1602,31 +1563,7 @@ private fun AppearancePreview(highlightStyle: CategoryHighlightStyle) {
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text("Категория", color = highlight.titleColor)
-        Text("1 поз.", color = HdTextSecondary)
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(tween(motion.expandDurationMs)) + fadeIn(tween(motion.expandDurationMs)),
-            exit = shrinkVertically(tween(motion.expandDurationMs)) + fadeOut(tween(motion.expandDurationMs)),
-        ) {
-            Text(
-                "Строка работы",
-                color = HdTextPrimary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .scale(demoScale)
-            .clip(RoundedCornerShape(14.dp))
-            .background(HdPanel)
-            .border(1.dp, HdBlue.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-            .padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("Кнопка", color = HdTextPrimary)
+        Text("3 поз.", color = HdTextSecondary)
     }
 }
 
@@ -2467,7 +2404,7 @@ private fun categoryTitle(state: EstimateEditorUiState, categoryKey: Long): Stri
     else -> state.categories.find { it.id == categoryKey }?.name ?: "Категория"
 }
 
-private enum class ServicePickerStep { Categories, Services }
+private enum class ServicePickerStep { Categories, Services, Confirming }
 
 @Composable
 private fun MainCategoryLinesSection(
@@ -2588,9 +2525,22 @@ private fun MainServicePickerPanel(
     onAddServices: (List<ServiceEntity>, Long) -> Unit,
 ) {
     val motion = LocalHdMotion.current
+    val pickerSlideMs = (motion.expandDurationMs * 1.2f).toInt()
     var step by remember { mutableStateOf(ServicePickerStep.Categories) }
     var activeCategoryId by remember { mutableStateOf<Long?>(null) }
     var selectedServiceIds by remember { mutableStateOf(setOf<Long>()) }
+    var pendingConfirm by remember { mutableStateOf<Pair<List<ServiceEntity>, Long>?>(null) }
+
+    LaunchedEffect(step, pendingConfirm) {
+        if (step != ServicePickerStep.Confirming || pendingConfirm == null) return@LaunchedEffect
+        delay(motion.lineEnterMs.coerceAtLeast(480).toLong())
+        val (picked, key) = pendingConfirm!!
+        onAddServices(picked, key)
+        pendingConfirm = null
+        selectedServiceIds = emptySet()
+        activeCategoryId = null
+        step = ServicePickerStep.Categories
+    }
 
     val servicesInCategory: List<ServiceEntity> = when (activeCategoryId) {
         FAVORITES_PICKER_CATEGORY_ID -> state.favorites
@@ -2607,16 +2557,21 @@ private fun MainServicePickerPanel(
         AnimatedContent(
             targetState = step,
             transitionSpec = {
-                if (targetState == ServicePickerStep.Services) {
-                    slideInHorizontally(animationSpec = tween(motion.expandDurationMs)) { it / 3 } +
-                        fadeIn(tween(motion.expandDurationMs)) togetherWith
-                        slideOutHorizontally(animationSpec = tween(motion.expandDurationMs)) { -it / 3 } +
-                        fadeOut(tween(motion.expandDurationMs - 40))
-                } else {
-                    slideInHorizontally(animationSpec = tween(motion.expandDurationMs)) { -it / 3 } +
-                        fadeIn(tween(motion.expandDurationMs)) togetherWith
-                        slideOutHorizontally(animationSpec = tween(motion.expandDurationMs)) { it / 3 } +
-                        fadeOut(tween(motion.expandDurationMs - 40))
+                when {
+                    targetState == ServicePickerStep.Confirming ->
+                        fadeIn(tween(pickerSlideMs)) togetherWith fadeOut(tween(pickerSlideMs / 2))
+                    initialState == ServicePickerStep.Confirming ->
+                        fadeIn(tween(pickerSlideMs / 2)) togetherWith fadeOut(tween(pickerSlideMs))
+                    targetState == ServicePickerStep.Services ->
+                        slideInHorizontally(animationSpec = tween(pickerSlideMs)) { it / 4 } +
+                            fadeIn(tween(pickerSlideMs)) togetherWith
+                            slideOutHorizontally(animationSpec = tween(pickerSlideMs)) { -it / 4 } +
+                            fadeOut(tween(pickerSlideMs - 40))
+                    else ->
+                        slideInHorizontally(animationSpec = tween(pickerSlideMs)) { -it / 4 } +
+                            fadeIn(tween(pickerSlideMs)) togetherWith
+                            slideOutHorizontally(animationSpec = tween(pickerSlideMs)) { it / 4 } +
+                            fadeOut(tween(pickerSlideMs - 40))
                 }
             },
             label = "servicePickerStep",
@@ -2734,15 +2689,49 @@ private fun MainServicePickerPanel(
                             } else {
                                 "Подтвердить (${selectedServiceIds.size})"
                             },
-                            enabled = selectedServiceIds.isNotEmpty(),
+                            enabled = selectedServiceIds.isNotEmpty() && step != ServicePickerStep.Confirming,
                         ) {
                             val picked = servicesInCategory.filter { selectedServiceIds.contains(it.id) }
                             val key = activeCategoryId ?: EstimateLineCategoryKeys.UNCATEGORIZED
-                            onAddServices(picked, key)
-                            selectedServiceIds = emptySet()
-                            step = ServicePickerStep.Categories
-                            activeCategoryId = null
+                            pendingConfirm = Pair(picked, key)
+                            step = ServicePickerStep.Confirming
                         }
+                    }
+                }
+                ServicePickerStep.Confirming -> {
+                    val count = pendingConfirm?.first?.size ?: selectedServiceIds.size
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = HdOrange,
+                            modifier = Modifier.size(40.dp),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Добавлено в «$activeCategoryLabel»",
+                            color = HdTextPrimary,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            "$count поз. — возврат к составу…",
+                            color = HdTextSecondary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        ServiceCategoryChip(
+                            name = activeCategoryLabel,
+                            selected = true,
+                            highlightStyle = highlightStyle,
+                            animationEnabled = animationEnabled,
+                            onClick = {},
+                        )
                     }
                 }
             }
