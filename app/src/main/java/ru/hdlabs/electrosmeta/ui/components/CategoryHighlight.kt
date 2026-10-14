@@ -61,7 +61,7 @@ fun categoryHighlightColors(
     } else {
         0.5f
     }
-    val amp = pulseStrength.coerceIn(0.5f, 2f)
+    val amp = pulseStrength.coerceIn(0f, 2.4f)
     val p = (pulse * amp).coerceIn(0f, 1f)
     return when (style) {
         CategoryHighlightStyle.SoftGlow -> {

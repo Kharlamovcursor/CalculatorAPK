@@ -247,13 +247,14 @@ fun HdSaveButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val motion = LocalHdMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = when (phase) {
             HdSavePhase.Saved -> 1.05f
             HdSavePhase.Saving -> 0.98f
-            HdSavePhase.Idle -> if (pressed) 0.90f else 1f
+            HdSavePhase.Idle -> if (pressed) motion.buttonPressScale else 1f
         },
         animationSpec = if (phase == HdSavePhase.Saved) {
             spring(dampingRatio = 0.5f, stiffness = 420f)

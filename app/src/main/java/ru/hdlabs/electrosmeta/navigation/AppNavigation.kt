@@ -12,6 +12,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -190,17 +194,26 @@ fun AppNavHost() {
             navController = nav,
             startDestination = Routes.HOME,
             enterTransition = {
+                val slide = motion.screenSlideDivisor
                 fadeIn(tween(motion.screenEnterMs)) +
-                    slideInHorizontally(tween(motion.screenEnterMs)) { it / 12 }
+                    slideInHorizontally(tween(motion.screenEnterMs)) { width ->
+                        if (slide <= 0) 0 else width / slide
+                    }
             },
             exitTransition = { fadeOut(tween(motion.screenExitMs)) },
             popEnterTransition = {
+                val slide = motion.screenSlideDivisor
                 fadeIn(tween(motion.screenEnterMs)) +
-                    slideInHorizontally(tween(motion.screenEnterMs)) { -it / 12 }
+                    slideInHorizontally(tween(motion.screenEnterMs)) { width ->
+                        if (slide <= 0) 0 else -width / slide
+                    }
             },
             popExitTransition = {
+                val slide = motion.screenSlideDivisor
                 fadeOut(tween(motion.screenExitMs)) +
-                    slideOutHorizontally(tween(motion.screenExitMs)) { it / 12 }
+                    slideOutHorizontally(tween(motion.screenExitMs)) { width ->
+                        if (slide <= 0) 0 else width / slide
+                    }
             },
         ) {
             composable(Routes.HOME) { HomeScreen(nav) }
@@ -1409,21 +1422,18 @@ private fun SettingsScreen(nav: NavHostController) {
         Spacer(Modifier.height(16.dp))
         HdSecondaryButton("Удалить все сметы из истории") { confirmClear = true }
         Spacer(Modifier.height(16.dp))
-        Text(
-            if (showAppearance) "Скрыть оформление" else "Оформление",
-            color = HdTextSecondary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showAppearance = !showAppearance }
-                .padding(vertical = 8.dp),
-            textAlign = TextAlign.Center,
-        )
+        HdSecondaryButton(if (showAppearance) "Скрыть оформление" else "Оформление") {
+            showAppearance = !showAppearance
+        }
         AnimatedVisibility(
             visible = showAppearance,
             enter = expandVertically(tween(220)) + fadeIn(tween(180)),
             exit = shrinkVertically(tween(180)) + fadeOut(tween(140)),
         ) {
             Column {
+                Spacer(Modifier.height(12.dp))
+                AppearancePreview(highlightStyle = settings.categoryHighlightStyle)
+                Spacer(Modifier.height(16.dp))
                 Text("Анимация интерфейса", color = HdTextPrimary)
                 Text(
                     "Кнопки, раскрытие блоков, переходы между экранами и подсветка категорий.",
@@ -1548,6 +1558,75 @@ private fun SettingsScreen(nav: NavHostController) {
             },
             dismissButton = { HdSecondaryButton("Отмена") { confirmClear = false } },
         )
+    }
+}
+
+@Composable
+private fun AppearancePreview(highlightStyle: CategoryHighlightStyle) {
+    val motion = LocalHdMotion.current
+    var expanded by remember(motion.expandDurationMs) { mutableStateOf(true) }
+    LaunchedEffect(motion.expandDurationMs) {
+        while (true) {
+            delay(motion.expandDurationMs.toLong().coerceAtLeast(80L) + 420L)
+            expanded = !expanded
+        }
+    }
+    val press = rememberInfiniteTransition(label = "appearancePress")
+    val demoScale by press.animateFloat(
+        initialValue = 1f,
+        targetValue = motion.buttonPressScale,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = (motion.buttonPressDurationMs * 3).coerceAtLeast(180),
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "appearancePressScale",
+    )
+    val highlight = categoryHighlightColors(
+        active = true,
+        style = highlightStyle,
+        animationEnabled = true,
+        expanded = true,
+        pulseStrength = motion.highlightPulseStrength,
+    )
+    val shape = RoundedCornerShape(12.dp)
+    Text("Так выглядит выбранный режим", color = HdTextSecondary, modifier = Modifier.padding(bottom = 8.dp))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(highlight.background)
+            .border(highlight.borderWidth, highlight.borderBrush, shape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text("Категория", color = highlight.titleColor)
+        Text("1 поз.", color = HdTextSecondary)
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(motion.expandDurationMs)) + fadeIn(tween(motion.expandDurationMs)),
+            exit = shrinkVertically(tween(motion.expandDurationMs)) + fadeOut(tween(motion.expandDurationMs)),
+        ) {
+            Text(
+                "Строка работы",
+                color = HdTextPrimary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .scale(demoScale)
+            .clip(RoundedCornerShape(14.dp))
+            .background(HdPanel)
+            .border(1.dp, HdBlue.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("Кнопка", color = HdTextPrimary)
     }
 }
 

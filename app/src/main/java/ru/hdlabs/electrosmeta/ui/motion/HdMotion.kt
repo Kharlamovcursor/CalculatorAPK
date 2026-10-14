@@ -16,6 +16,7 @@ data class HdMotionSpec(
     val screenExitMs: Int,
     val lineEnterMs: Int,
     val backgroundSpeedMultiplier: Float,
+    val screenSlideDivisor: Int,
 ) {
     companion object {
         fun balanced(): HdMotionSpec = resolveHdMotion(AppSettings())
@@ -27,28 +28,30 @@ val LocalHdMotion = compositionLocalOf { HdMotionSpec.balanced() }
 fun resolveHdMotion(settings: AppSettings): HdMotionSpec {
     if (!settings.animationEnabled || settings.powerSaveMode) {
         return HdMotionSpec(
-            buttonPressScale = 0.98f,
-            buttonPressDurationMs = 60,
-            expandDurationMs = 180,
-            highlightPulseStrength = 0.6f,
-            scaffoldOverlayAlpha = 0.58f,
-            screenEnterMs = 120,
-            screenExitMs = 100,
-            lineEnterMs = 150,
-            backgroundSpeedMultiplier = 0.85f,
+            buttonPressScale = 1f,
+            buttonPressDurationMs = 40,
+            expandDurationMs = 80,
+            highlightPulseStrength = 0.2f,
+            scaffoldOverlayAlpha = 0.62f,
+            screenEnterMs = 50,
+            screenExitMs = 40,
+            lineEnterMs = 60,
+            backgroundSpeedMultiplier = 0.4f,
+            screenSlideDivisor = 0,
         )
     }
     return when (settings.uiMotionLevel) {
         UiMotionLevel.Subtle -> HdMotionSpec(
-            buttonPressScale = 0.96f,
-            buttonPressDurationMs = 100,
-            expandDurationMs = 280,
-            highlightPulseStrength = 1f,
-            scaffoldOverlayAlpha = 0.50f,
-            screenEnterMs = 180,
-            screenExitMs = 140,
-            lineEnterMs = 220,
-            backgroundSpeedMultiplier = 1f,
+            buttonPressScale = 1f,
+            buttonPressDurationMs = 40,
+            expandDurationMs = 90,
+            highlightPulseStrength = 0.15f,
+            scaffoldOverlayAlpha = 0.62f,
+            screenEnterMs = 70,
+            screenExitMs = 50,
+            lineEnterMs = 80,
+            backgroundSpeedMultiplier = 0.4f,
+            screenSlideDivisor = 0,
         )
         UiMotionLevel.Balanced -> HdMotionSpec(
             buttonPressScale = 0.93f,
@@ -60,17 +63,19 @@ fun resolveHdMotion(settings: AppSettings): HdMotionSpec {
             screenExitMs = 160,
             lineEnterMs = 280,
             backgroundSpeedMultiplier = 1.15f,
+            screenSlideDivisor = 12,
         )
         UiMotionLevel.Expressive -> HdMotionSpec(
-            buttonPressScale = 0.90f,
-            buttonPressDurationMs = 160,
-            expandDurationMs = 400,
-            highlightPulseStrength = 1.7f,
-            scaffoldOverlayAlpha = 0.34f,
-            screenEnterMs = 280,
-            screenExitMs = 200,
-            lineEnterMs = 320,
-            backgroundSpeedMultiplier = 1.3f,
+            buttonPressScale = 0.82f,
+            buttonPressDurationMs = 240,
+            expandDurationMs = 760,
+            highlightPulseStrength = 2.2f,
+            scaffoldOverlayAlpha = 0.2f,
+            screenEnterMs = 480,
+            screenExitMs = 340,
+            lineEnterMs = 540,
+            backgroundSpeedMultiplier = 2.2f,
+            screenSlideDivisor = 4,
         )
     }
 }
