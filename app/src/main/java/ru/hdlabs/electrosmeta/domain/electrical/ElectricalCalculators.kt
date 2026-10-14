@@ -15,6 +15,28 @@ enum class CablesInConduit { OneTwo, ThreeFour }
 
 enum class RcdLocationHint { DryRooms, WetRooms }
 
+/** Назначение линии для выбора лимита ΔU (упрощённая модель, ТЗ 2.2.0). */
+enum class ElectricalLineKind {
+    /** Силовая / розеточная — 5% в MVP */
+    Power,
+    /** Освещение — 3% в MVP */
+    Lighting,
+}
+
+enum class RcdLoadKind {
+    /** Нагреватели, лампы накаливания без электроники */
+    MostlyClassic,
+    /** LED, БП, зарядки, электроника — тип A */
+    WithElectronics,
+}
+
+enum class RcdSensitivityContext {
+    /** Групповые линии квартиры */
+    GroupCircuit,
+    /** Повышенный риск поражения (ванная и т.п.) — только как подсказка */
+    HigherShockRisk,
+}
+
 data class CableSectionInput(
     val currentAmps: Double,
     val material: ConductorMaterial,
@@ -22,8 +44,9 @@ data class CableSectionInput(
     val lengthMeters: Double?,
     val phaseMode: PhaseMode,
     val voltageVolts: Double,
-    val maxVoltageDropPercent: Double = 5.0,
+    val maxVoltageDropPercent: Double? = null,
     val cablesInConduit: CablesInConduit = CablesInConduit.OneTwo,
+    val lineKind: ElectricalLineKind = ElectricalLineKind.Power,
 )
 
 enum class CableSectionLimitingFactor {
@@ -82,6 +105,8 @@ data class LedStripResult(
     val feederHint: String,
     val recommendation: String,
     val dcFeeder: LedDcFeederResult? = null,
+    /** Лента/модуль на сеть 220 В — без расчёта DC-линии */
+    val isMainsAc: Boolean = false,
 )
 
 data class BreakerInput(
@@ -106,11 +131,14 @@ data class VoltageDropInput(
     val material: ConductorMaterial,
     val phaseMode: PhaseMode,
     val voltageVolts: Double,
+    val lineKind: ElectricalLineKind = ElectricalLineKind.Power,
+    val maxDropPercent: Double? = null,
 )
 
 data class VoltageDropResult(
     val dropVolts: Double,
     val dropPercent: Double,
+    val maxDropPercent: Double,
     val withinLimit: Boolean,
     val recommendation: String,
 )
@@ -128,7 +156,8 @@ data class LightingPowerResult(
 
 data class RcdHintInput(
     val breakerAmps: Int,
-    val location: RcdLocationHint,
+    val loadKind: RcdLoadKind = RcdLoadKind.WithElectronics,
+    val sensitivityContext: RcdSensitivityContext = RcdSensitivityContext.GroupCircuit,
 )
 
 data class RcdHintResult(
@@ -146,11 +175,21 @@ data class CableOrderInput(
 )
 
 data class CableOrderResult(
-    val totalMeters: Double,
+    /** Метраж с запасом до округления, м */
+    val exactMetersWithReserve: Double,
+    /** Заказ, м (округление вверх до целого) */
+    val orderMeters: Int,
     val rollsCount: Int?,
+    /** Суммарная длина купленных бухт, м */
+    val purchasedMeters: Double?,
+    /** Остаток после работ, м */
+    val remainderMeters: Double?,
     val recommendation: String,
     val notes: List<String> = emptyList(),
-)
+) {
+    /** Для совместимости: заказ к целым метрам */
+    val totalMeters: Double get() = orderMeters.toDouble()
+}
 
 object ElectricalCalculators {
     private val standardSectionsMm2 = listOf(1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0, 95.0)
@@ -174,9 +213,16 @@ object ElectricalCalculators {
         }
     }
 
+    fun defaultMaxVoltageDropPercent(lineKind: ElectricalLineKind): Double = when (lineKind) {
+        ElectricalLineKind.Power -> 5.0
+        ElectricalLineKind.Lighting -> 3.0
+    }
+
     fun cableSection(input: CableSectionInput): CableSectionResult? {
         if (input.currentAmps <= 0 || input.voltageVolts <= 0) return null
+        val maxDropPct = input.maxVoltageDropPercent ?: defaultMaxVoltageDropPercent(input.lineKind)
         val notes = mutableListOf<String>()
+        notes += "Режим: предварительный подбор (упрощённые таблицы, cos φ = 1)."
         val byAmpacity = minSectionForCurrent(
             input.currentAmps,
             input.material,
@@ -194,12 +240,12 @@ object ElectricalCalculators {
                 material = input.material,
                 phaseMode = input.phaseMode,
                 voltage = input.voltageVolts,
-                maxPercent = input.maxVoltageDropPercent,
+                maxPercent = maxDropPct,
             )
             if (minForDrop != null && minForDrop > chosen) {
                 chosen = minForDrop
                 limiting = CableSectionLimitingFactor.VoltageDrop
-                notes += "Сечение увеличено из‑за падения напряжения (≤ ${input.maxVoltageDropPercent}%)."
+                notes += "Сечение увеличено из‑за падения напряжения (≤ ${maxDropPct}%)."
             }
         }
         if (input.material == ConductorMaterial.Copper && chosen < 1.5) {
@@ -228,13 +274,15 @@ object ElectricalCalculators {
                     input.material,
                     input.phaseMode,
                     input.voltageVolts,
+                    lineKind = input.lineKind,
+                    maxDropPercent = maxDropPct,
                 ),
             )?.dropPercent
         } else {
             null
         }
         notes += "Длительно допустимый ток для ${formatSection(chosen)} мм² ≈ ${ampsAt.toInt()} А (ориентир по ПУЭ, упрощённо)."
-        val recommendation = buildCableSectionRecommendation(input, chosen, limiting, dropPct)
+        val recommendation = buildCableSectionRecommendation(input, chosen, limiting, dropPct, maxDropPct)
         return CableSectionResult(
             recommendedSectionMm2 = chosen,
             allowableAmpsAtSection = ampsAt,
@@ -258,6 +306,7 @@ object ElectricalCalculators {
         section: Double,
         limiting: CableSectionLimitingFactor,
         dropPct: Double?,
+        maxDropPct: Double,
     ): String {
         val phaseLabel = when (input.phaseMode) {
             PhaseMode.Single -> "1 фаза, ${input.voltageVolts.toInt()} В"
@@ -282,7 +331,7 @@ object ElectricalCalculators {
             else -> buildString {
                 append("Итог: ${formatSection(section)} мм² при ${"%.0f".format(input.currentAmps)} А ($phaseLabel). ")
                 dropPct?.let {
-                    append("ΔU на ${"%.0f".format(length)} м ≈ ${"%.1f".format(it)}% — в пределах ${input.maxVoltageDropPercent}%. ")
+                    append("ΔU на ${"%.0f".format(length)} м ≈ ${"%.1f".format(it)}% — в пределах ${maxDropPct}%. ")
                 }
                 append("Сверьте с автоматом и способом прокладки на объекте.")
             }
@@ -291,6 +340,9 @@ object ElectricalCalculators {
 
     fun ledStrip(input: LedStripInput): LedStripResult? {
         if (input.lengthMeters <= 0 || input.wattsPerMeter <= 0 || input.supplyVolts <= 0) return null
+        if (input.supplyVolts >= 100.0) {
+            return ledStripMainsAc(input)
+        }
         val factor = input.reserveFactor.coerceIn(1.05, 1.5)
         val totalW = input.lengthMeters * input.wattsPerMeter
         val loadA = totalW / input.supplyVolts
@@ -304,6 +356,28 @@ object ElectricalCalculators {
         val feeder = buildLedFeederHint(input, loadA, feederDrop)
         val recommendation = buildLedStripRecommendation(loadA, input.supplyVolts, feederDrop)
         return LedStripResult(totalW, loadA, psuW, psuA, label, feeder, recommendation, feederDrop)
+    }
+
+    private fun ledStripMainsAc(input: LedStripInput): LedStripResult {
+        val totalW = input.lengthMeters * input.wattsPerMeter
+        val loadA = totalW / input.supplyVolts
+        val recommendation = buildString {
+            append("Итог: лента/модуль на сеть ${input.supplyVolts.toInt()} В — ")
+            append("монтаж и защита по инструкции производителя; DC-формулы не применяются. ")
+            append("Проверьте автомат, УЗО тип A и сечение вводной линии в калькуляторах сечения/ΔU.")
+        }
+        val feeder = "Сеть 220 В: не используйте расчёт DC-кабеля от щита; отдельная линия по паспорту изделия."
+        return LedStripResult(
+            totalWatts = totalW,
+            loadAmps = loadA,
+            psuWattsMin = totalW,
+            psuAmpsMin = loadA,
+            suggestedPsuLabel = "Питание от сети ${input.supplyVolts.toInt()} В",
+            feederHint = feeder,
+            recommendation = recommendation,
+            dcFeeder = null,
+            isMainsAc = true,
+        )
     }
 
     private fun buildLedStripRecommendation(
@@ -396,6 +470,7 @@ object ElectricalCalculators {
         val breaker = standardBreakers.firstOrNull { it >= design } ?: standardBreakers.last()
         val notes = mutableListOf<String>()
         notes += "Номинал автомата ≥ 1,25× рабочий ток (длительная нагрузка)."
+        notes += "Защита кабеля (Iном ≤ Iдоп), пусковые токи, характеристики B/C/D и отключение при КЗ в приложении не проверяются."
         if (breaker == standardBreakers.last() && design > breaker) {
             notes += "Нагрузка высокая — нужен расчёт по проекту."
         }
@@ -427,17 +502,22 @@ object ElectricalCalculators {
             PhaseMode.Three -> sqrt(3.0) * input.currentAmps * input.lengthMeters * rho / input.sectionMm2
         }
         val pct = 100.0 * drop / input.voltageVolts
-        val ok = pct <= 5.0
+        val limit = input.maxDropPercent ?: defaultMaxVoltageDropPercent(input.lineKind)
+        val ok = pct <= limit
         val phaseLabel = when (input.phaseMode) {
             PhaseMode.Single -> "1 фаза"
             PhaseMode.Three -> "3 фазы"
         }
-        val recommendation = if (ok) {
-            "Итог: ΔU ${"%.1f".format(pct)}% — в норме (≤5%) для $phaseLabel, ${input.voltageVolts.toInt()} В."
-        } else {
-            "Итог: ΔU ${"%.1f".format(pct)}% — выше 5%; увеличьте сечение или укоротите линию ($phaseLabel, ${input.voltageVolts.toInt()} В)."
+        val kindLabel = when (input.lineKind) {
+            ElectricalLineKind.Power -> "силовая/розеточная"
+            ElectricalLineKind.Lighting -> "освещение"
         }
-        return VoltageDropResult(drop, pct, ok, recommendation)
+        val recommendation = if (ok) {
+            "Итог: ΔU ${"%.1f".format(pct)}% — в норме (≤${"%.0f".format(limit)}%, $kindLabel) для $phaseLabel, ${input.voltageVolts.toInt()} В."
+        } else {
+            "Итог: ΔU ${"%.1f".format(pct)}% — выше ${"%.0f".format(limit)}% ($kindLabel); увеличьте сечение или укоротите линию ($phaseLabel, ${input.voltageVolts.toInt()} В)."
+        }
+        return VoltageDropResult(drop, pct, limit, ok, recommendation)
     }
 
     fun lightingPower(input: LightingPowerInput): LightingPowerResult? {
@@ -445,7 +525,7 @@ object ElectricalCalculators {
         val totalW = input.areaSqM * input.wattsPerSqM
         val i = totalW / 220.0
         val recommendation = buildString {
-            append("Итог: ≈${"%.0f".format(totalW)} Вт освещения. ")
+            append("Итог (ориентир, не расчёт освещённости по СП): ≈${"%.0f".format(totalW)} Вт. ")
             when {
                 i <= 10 -> append("Для LED обычно 1,5 мм² меди на группу; автомат 10 А.")
                 i <= 16 -> append("Проверьте автомат 10–16 А и кабель 1,5–2,5 мм²; при длинной линии — расчёт ΔU.")
@@ -456,22 +536,29 @@ object ElectricalCalculators {
     }
 
     fun rcdHint(input: RcdHintInput): RcdHintResult {
-        val leakage = when (input.location) {
-            RcdLocationHint.WetRooms -> 10
-            RcdLocationHint.DryRooms -> 30
+        val leakage = when (input.sensitivityContext) {
+            RcdSensitivityContext.HigherShockRisk -> 10
+            RcdSensitivityContext.GroupCircuit -> 30
         }
         val rated = listOf(16, 25, 40, 63, 80)
             .firstOrNull { it >= input.breakerAmps } ?: 80
         val notes = mutableListOf<String>()
-        notes += "Номинал УЗО ≥ номинал автомата линии."
-        notes += if (input.location == RcdLocationHint.WetRooms) {
-            "Ванная, душ — чувствительность 10 мА (отдельная линия)."
-        } else {
-            "Групповые линии квартиры — часто 30 мА (вводной или групповой диф)."
+        notes += "Справочная подсказка, не проектный подбор. Номинал УЗО ≥ номинал автомата линии."
+        notes += when (input.sensitivityContext) {
+            RcdSensitivityContext.HigherShockRisk ->
+                "Контекст повышенного риска: часто рассматривают 10 мА на отдельную линию — уточните по проекту и ПУЭ."
+            RcdSensitivityContext.GroupCircuit ->
+                "Групповые линии квартиры — типично 30 мА (вводной или групповой диф); не единственный критерий."
         }
-        notes += "Тип A предпочтительнее для дома (LED, БП, зарядки); тип AC — устаревающий вариант для чисто «классических» нагрузок."
+        notes += when (input.loadKind) {
+            RcdLoadKind.WithElectronics ->
+                "Нагрузка с электроникой (LED, БП, зарядки): предпочтительен тип A; тип AC может не срабатывать на пульсирующий DC."
+            RcdLoadKind.MostlyClassic ->
+                "Преимущественно «классическая» нагрузка: тип AC допустим чаще, но для смешанных линий всё равно рассмотрите тип A."
+        }
+        val typeHint = if (input.loadKind == RcdLoadKind.WithElectronics) "A" else "A или AC (по нагрузке)"
         val recommendation =
-            "Итог: УЗО ${rated} А / ${leakage} мА; тип A для линий с электроникой; номинал не ниже автомата линии."
+            "Итог: ориентир УЗО ${rated} А / ${leakage} мА, тип $typeHint; номинал не ниже автомата ${input.breakerAmps} А."
         return RcdHintResult(rated, leakage, recommendation, notes)
     }
 
@@ -481,25 +568,39 @@ object ElectricalCalculators {
         if (sum <= 0) return null
         val reservePct = input.reservePercent.coerceIn(0.0, 50.0)
         val reserve = reservePct / 100.0
-        val total = sum * input.runsCount * (1.0 + reserve)
-        val rolls = input.rollLengthM?.takeIf { it > 0 }?.let { roll ->
-            ceil(total / roll).toInt()
-        }
+        val exact = sum * input.runsCount * (1.0 + reserve)
+        val orderM = ceil(exact).toInt()
+        val rollLen = input.rollLengthM?.takeIf { it > 0 }
+        val rolls = rollLen?.let { roll -> ceil(orderM.toDouble() / roll).toInt() }
+        val purchased = rolls?.let { r -> r * rollLen!! }
+        val remainder = purchased?.let { it - orderM }
         val notes = mutableListOf<String>()
         if (input.segmentLengthsM.size > 1) {
             val parts = input.segmentLengthsM.joinToString(" + ") { "%.0f".format(it) }
             notes += "Участки одной трассы: $parts = ${"%.1f".format(sum)} м."
         }
-        notes += "Расчёт: ${"%.1f".format(sum)} м × ${input.runsCount} трассы × (1 + ${"%.0f".format(reservePct)}% запас) = ${"%.1f".format(total)} м."
+        notes += "Расчёт: ${"%.1f".format(sum)} м × ${input.runsCount} трассы × (1 + ${"%.0f".format(reservePct)}% запас) = ${"%.1f".format(exact)} м."
+        notes += "Заказ (округление вверх до 1 м): $orderM м."
+        if (rolls != null && rollLen != null) {
+            notes += "Бухт: $rolls × ${rollLen.toInt()} м = ${"%.0f".format(purchased!!)} м; остаток ≈ ${"%.0f".format(remainder!!)} м."
+        }
         val recommendation = buildString {
-            append("Итог: закажите ≈${"%.0f".format(total)} м с учётом запаса. ")
+            append("Итог: закажите $orderM м (с запасом ${"%.1f".format(exact)} м до округления). ")
             if (rolls != null) {
-                append("Кратность бухте — округление вверх; заложите отходы на разделку и монтаж.")
+                append("Купить $rolls бухт(и); остаток после работ — не прибавляется к заказу.")
             } else {
                 append("Добавьте длину бухты, чтобы посчитать число отрезков.")
             }
         }
-        return CableOrderResult(total, rolls, recommendation, notes)
+        return CableOrderResult(
+            exactMetersWithReserve = exact,
+            orderMeters = orderM,
+            rollsCount = rolls,
+            purchasedMeters = purchased,
+            remainderMeters = remainder,
+            recommendation = recommendation,
+            notes = notes,
+        )
     }
 
     private data class Ampacity(val section: Double, val maxAmps: Double)

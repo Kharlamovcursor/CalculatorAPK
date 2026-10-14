@@ -2,6 +2,7 @@ package ru.hdlabs.electrosmeta.domain.electrical
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -197,7 +198,7 @@ class ElectricalCalculatorsTest {
             CableOrderInput(listOf(10.0, 5.0), runsCount = 2, reservePercent = 10.0, rollLengthM = 100.0),
         )
         assertNotNull(r)
-        assertEquals(33.0, r!!.totalMeters, 0.01)
+        assertEquals(33, r!!.orderMeters)
         assertEquals(1, r.rollsCount)
     }
 
@@ -207,7 +208,17 @@ class ElectricalCalculatorsTest {
             CableOrderInput(listOf(12.0), runsCount = 3, reservePercent = 0.0, rollLengthM = null),
         )
         assertNotNull(r)
-        assertEquals(36.0, r!!.totalMeters, 0.01)
+        assertEquals(36, r!!.orderMeters)
+    }
+
+    @Test
+    fun cableOrderAcceptanceTestA() {
+        val r = ElectricalCalculators.cableOrder(
+            CableOrderInput(listOf(12.0), runsCount = 3, reservePercent = 10.0, rollLengthM = null),
+        )
+        assertNotNull(r)
+        assertEquals(39.6, r!!.exactMetersWithReserve, 0.01)
+        assertEquals(40, r.orderMeters)
     }
 
     @Test
@@ -220,8 +231,46 @@ class ElectricalCalculatorsTest {
         )
         assertNotNull(wrong)
         assertNotNull(right)
-        assertEquals(82.5, wrong!!.totalMeters, 0.01)
-        assertEquals(39.6, right!!.totalMeters, 0.01)
+        assertEquals(83, wrong!!.orderMeters)
+        assertEquals(40, right!!.orderMeters)
+    }
+
+    @Test
+    fun cableSectionLightingStricterDropAt30m() {
+        val power = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                16.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                30.0,
+                PhaseMode.Single,
+                220.0,
+                lineKind = ElectricalLineKind.Power,
+            ),
+        )
+        val light = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                16.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                30.0,
+                PhaseMode.Single,
+                220.0,
+                lineKind = ElectricalLineKind.Lighting,
+            ),
+        )
+        assertNotNull(power)
+        assertNotNull(light)
+        assertEquals(2.5, power!!.recommendedSectionMm2, 0.0)
+        assertEquals(4.0, light!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun ledStripMains220() {
+        val r = ElectricalCalculators.ledStrip(LedStripInput(2.0, 10.0, 220.0))
+        assertNotNull(r)
+        assertTrue(r!!.isMainsAc)
+        assertNull(r.dcFeeder)
     }
 
     @Test
