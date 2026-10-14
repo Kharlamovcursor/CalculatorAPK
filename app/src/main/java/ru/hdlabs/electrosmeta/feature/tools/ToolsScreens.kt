@@ -28,6 +28,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,11 +39,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import androidx.navigation.NavHostController
 import ru.hdlabs.electrosmeta.domain.electrical.BreakerInput
 import ru.hdlabs.electrosmeta.domain.electrical.CableInstallMode
+import ru.hdlabs.electrosmeta.domain.electrical.CablesInConduit
 import ru.hdlabs.electrosmeta.domain.electrical.CableOrderInput
 import ru.hdlabs.electrosmeta.domain.electrical.CableSectionInput
 import ru.hdlabs.electrosmeta.domain.electrical.ConductorMaterial
@@ -65,6 +71,9 @@ import ru.hdlabs.electrosmeta.ui.theme.HdOrange
 import ru.hdlabs.electrosmeta.ui.theme.HdPanel
 import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
+
+const val ToolsCalculatorsDisclaimer =
+    "Расчёт ориентировочный, основан на упрощённых таблицах ПУЭ. Ответственность за проектные решения несёт исполнитель."
 
 object ToolRoutes {
     const val CABLE = "tool/cable"
@@ -108,7 +117,7 @@ fun ToolsHubContent(
 ) {
     Column(modifier) {
         Text(
-            "Ориентировочные расчёты для монтажа. Проверяйте по проекту и ПУЭ.",
+            ToolsCalculatorsDisclaimer,
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 12.dp),
             textAlign = TextAlign.Center,
@@ -145,6 +154,7 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         var lineVoltage by remember { mutableIntStateOf(220) }
         var material by remember { mutableStateOf(ConductorMaterial.Copper) }
         var install by remember { mutableStateOf(CableInstallMode.InConduit) }
+        var cablesInDuct by remember { mutableStateOf(CablesInConduit.OneTwo) }
         var phase by remember { mutableStateOf(PhaseMode.Single) }
         LaunchedEffect(phase) {
             if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
@@ -153,8 +163,13 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
 
-        HdTextField(current, { current = it }, "Ток нагрузки, А")
-        HdTextField(length, { length = it }, "Длина линии, м (необяз.)")
+        HdTextField(current, { current = it }, "Ток нагрузки, А (фазный / линейный)")
+        HdTextField(length, { length = it }, "Длина линии, м (необяз., в одну сторону)")
+        Text(
+            "Без длины считаем только по допустимому току — 220 и 380 В при одном и том же токе дадут то же сечение.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         HdAcVoltagePicker(lineVoltage, onSelect = { lineVoltage = it })
         HdChoiceLabel("Материал")
         HdTwoChoice("Медь", "Алюминий", material == ConductorMaterial.Copper) {
@@ -164,11 +179,17 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         HdTwoChoice("В трубе", "Открыто", install == CableInstallMode.InConduit) {
             install = if (it) CableInstallMode.InConduit else CableInstallMode.OpenAir
         }
+        if (install == CableInstallMode.InConduit) {
+            HdChoiceLabel("Кабелей в трубе")
+            HdTwoChoice("1–2", "3–4", cablesInDuct == CablesInConduit.OneTwo) {
+                cablesInDuct = if (it) CablesInConduit.OneTwo else CablesInConduit.ThreeFour
+            }
+        }
         HdChoiceLabel("Сеть")
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val i = parseElectricalDouble(current)
             val len = parseElectricalDouble(length)
             if (i == null || i <= 0) {
@@ -176,7 +197,15 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
                 notes = listOf("Укажите ток больше 0.")
             } else {
                 val r = ElectricalCalculators.cableSection(
-                    CableSectionInput(i, material, install, len, phase, lineVoltage.toDouble()),
+                    CableSectionInput(
+                        i,
+                        material,
+                        install,
+                        len,
+                        phase,
+                        lineVoltage.toDouble(),
+                        cablesInConduit = cablesInDuct,
+                    ),
                 )
                 if (r == null) {
                     resultText = "Не удалось рассчитать"
@@ -184,7 +213,7 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
                 } else {
                     val drop = r.voltageDropPercent?.let { " Падение ≈ ${"%.1f".format(it)}%." } ?: ""
                     resultText = "Рекомендуемое сечение: ${r.recommendedSectionMm2} мм².$drop"
-                    notes = r.notes
+                    notes = listOf(r.recommendation) + r.notes
                 }
             }
         }
@@ -223,7 +252,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val l = parseElectricalDouble(length)
             val w = parseElectricalDouble(wpm)
             val v = supplyVolts.toDouble()
@@ -244,6 +273,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
                 resultText = buildString {
                     append("Мощность ленты: ${"%.1f".format(r.totalWatts)} Вт, ток ≈ ${"%.2f".format(r.loadAmps)} А.\n")
                     append("Блок питания: ${r.suggestedPsuLabel} (запас 20%).")
+                    append("\nЗапас нужен, чтобы БП не работал на пределе.")
                     r.dcFeeder?.let { fd ->
                         append("\n\nЛиния от щита до ленты:\n")
                         append("Падение на кабеле ≈ ${"%.2f".format(fd.dropVolts)} В (${"%.1f".format(fd.dropPercent)}%).\n")
@@ -260,9 +290,11 @@ fun LedStripToolScreen(onBack: () -> Unit) {
                                 append("\nОриентир сечения при этой длине: не меньше $minS мм².")
                             }
                         }
+                        append("\n${fd.recommendation}")
                     }
                 }
                 notes = buildList {
+                    add(r.recommendation)
                     if (r.feederHint.isNotBlank()) add(r.feederHint)
                     if (supplyVolts <= 5) {
                         add("На 5 В ток выше — нужен толстый кабель до ленты и БП с запасом по амперам.")
@@ -298,7 +330,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val p = parseElectricalDouble(power)
             val c = parseElectricalDouble(cos) ?: 1.0
             val r = if (p != null) {
@@ -314,7 +346,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
                     append("Ток нагрузки ≈ ${"%.1f".format(r.loadAmps)} А.\n")
                     append("С запасом 1,25: ${"%.1f".format(r.designAmps)} А → автомат ${r.recommendedBreakerAmps} А.")
                 }
-                notes = r.notes
+                notes = listOf(r.recommendation) + r.notes
             }
         }
         ToolResultBlock(resultText, notes)
@@ -349,7 +381,7 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val i = parseElectricalDouble(current)
             val l = parseElectricalDouble(length)
             val s = parseElectricalDouble(section)
@@ -362,9 +394,9 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
                 resultText = null
                 notes = listOf("Заполните ток, длину и сечение.")
             } else {
-                val ok = if (r.withinLimit) "в норме (≤5%)" else "выше 5% — увеличьте сечение или укоротите линию"
+                val ok = if (r.withinLimit) "в норме (≤5%)" else "выше 5%"
                 resultText = "ΔU ≈ ${"%.2f".format(r.dropVolts)} В (${"%.1f".format(r.dropPercent)}%), $ok"
-                notes = emptyList()
+                notes = listOf(r.recommendation)
             }
         }
         ToolResultBlock(resultText, notes)
@@ -377,6 +409,7 @@ fun LightingToolScreen(onBack: () -> Unit) {
         var area by remember { mutableStateOf("18") }
         var wsq by remember { mutableStateOf("15") }
         var resultText by remember { mutableStateOf<String?>(null) }
+        var notes by remember { mutableStateOf<List<String>>(emptyList()) }
 
         HdTextField(area, { area = it }, "Площадь, м²")
         HdTextField(wsq, { wsq = it }, "Удельная мощность, Вт/м²")
@@ -385,7 +418,7 @@ fun LightingToolScreen(onBack: () -> Unit) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val a = parseElectricalDouble(area)
             val w = parseElectricalDouble(wsq)
             val r = if (a != null && w != null) ElectricalCalculators.lightingPower(LightingPowerInput(a, w)) else null
@@ -393,8 +426,9 @@ fun LightingToolScreen(onBack: () -> Unit) {
                 "Суммарная мощность ≈ ${"%.0f".format(it.totalWatts)} Вт.\n" +
                     "Ток одной фазы 220 В ≈ ${"%.1f".format(it.approxCurrentSinglePhase220)} А."
             }
+            notes = r?.let { listOf(it.recommendation) } ?: emptyList()
         }
-        ToolResultBlock(resultText, emptyList())
+        ToolResultBlock(resultText, notes)
     }
 }
 
@@ -414,7 +448,7 @@ fun RcdToolScreen(onBack: () -> Unit) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 10.dp),
         )
-        HdPrimaryButton("Подсказка") {
+        ToolCalcButton("Подсказка") {
             val b = parseElectricalDouble(breaker)?.toInt()
             if (b == null || b <= 0) {
                 resultText = null
@@ -424,7 +458,7 @@ fun RcdToolScreen(onBack: () -> Unit) {
                     RcdHintInput(b, if (wet) RcdLocationHint.WetRooms else RcdLocationHint.DryRooms),
                 )
                 resultText = "УЗО: ${r.rcdRatedAmps} А, чувствительность ${r.leakageMa} мА."
-                notes = r.notes
+                notes = listOf(r.recommendation) + r.notes
             }
         }
         ToolResultBlock(resultText, notes)
@@ -439,6 +473,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
         var reserve by remember { mutableStateOf("10") }
         var roll by remember { mutableStateOf("100") }
         var resultText by remember { mutableStateOf<String?>(null) }
+        var notes by remember { mutableStateOf<List<String>>(emptyList()) }
 
         HdTextField(
             lengths,
@@ -448,7 +483,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
         HdTextField(runs, { runs = it }, "Число одинаковых трасс")
         HdTextField(reserve, { reserve = it }, "Запас, %")
         HdTextField(roll, { roll = it }, "Длина бухты, м (необяз.)")
-        HdPrimaryButton("Рассчитать") {
+        ToolCalcButton("Рассчитать") {
             val segs = lengths.lines()
                 .mapNotNull { parseElectricalDouble(it) }
                 .filter { it > 0 }
@@ -462,8 +497,9 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
                     "Итого ≈ ${"%.1f".format(r.totalMeters)} м, бухт по ${rollM?.toInt()} м: ${r.rollsCount} шт."
                 else -> "Итого ≈ ${"%.1f".format(r.totalMeters)} м."
             }
+            notes = r?.let { listOf(it.recommendation) } ?: emptyList()
         }
-        ToolResultBlock(resultText, emptyList())
+        ToolResultBlock(resultText, notes)
     }
 }
 
@@ -511,25 +547,46 @@ internal fun ToolScreenScaffold(
                         content()
                     }
                     Spacer(Modifier.height(20.dp))
-                    Text(
-                        "Расчёт ориентировочный. Ответственность за проектные решения несёт исполнитель.",
-                        color = HdTextSecondary,
-                    )
+                    Text(ToolsCalculatorsDisclaimer, color = HdTextSecondary)
                 }
             }
         }
     }
 }
 
+/** Скрывает клавиатуру перед расчётом, чтобы был виден блок «Результат». */
+@Composable
+private fun ToolCalcButton(text: String, onClick: () -> Unit) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    HdPrimaryButton(text) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onClick()
+    }
+}
+
 @Composable
 private fun ToolResultBlock(result: String?, notes: List<String>) {
+    val bringIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(result) {
+        if (result != null) {
+            delay(120)
+            bringIntoView.bringIntoView()
+        }
+    }
     if (result != null) {
         Spacer(Modifier.height(16.dp))
-        HdCard {
+        HdCard(Modifier.bringIntoViewRequester(bringIntoView)) {
             Text("Результат", color = HdOrange)
             Text(result, color = HdTextPrimary, modifier = Modifier.padding(top = 8.dp))
-            notes.forEach { note ->
-                Text("• $note", color = HdTextSecondary, modifier = Modifier.padding(top = 6.dp))
+            notes.forEachIndexed { index, note ->
+                val color = if (index == 0 && note.startsWith("Итог:")) HdOrange else HdTextSecondary
+                Text(
+                    if (index == 0 && note.startsWith("Итог:")) note else "• $note",
+                    color = color,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
         }
     }

@@ -1659,6 +1659,22 @@ private fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(16.dp))
         UpdateCheckSection()
+        if (ReleaseUpdateConfig.isConfigured()) {
+            Spacer(Modifier.height(8.dp))
+            val context = LocalContext.current
+            HdSecondaryButton("Сообщить об ошибке в расчётах") {
+                val title = Uri.encode("Ошибка в калькуляторе")
+                val url =
+                    "https://github.com/${ReleaseUpdateConfig.githubOwner}/${ReleaseUpdateConfig.githubRepo}/issues/new" +
+                        "?labels=bug&title=$title"
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+            Text(
+                "Откроется GitHub: опишите экран, вводные данные и что ожидали увидеть.",
+                color = HdTextSecondary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
     }
 
     importPreview?.let { preview ->

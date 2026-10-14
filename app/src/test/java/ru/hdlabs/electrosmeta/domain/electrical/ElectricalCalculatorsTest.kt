@@ -1,7 +1,5 @@
 package ru.hdlabs.electrosmeta.domain.electrical
 
-import ru.hdlabs.electrosmeta.domain.electrical.ConductorMaterial
-import ru.hdlabs.electrosmeta.domain.electrical.LedDcFeederInput
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -23,18 +21,85 @@ class ElectricalCalculatorsTest {
 
     @Test
     fun cableSectionFor10Amps() {
-        val r = ElectricalCalculators.cableSection(
-            CableSectionInput(
-                currentAmps = 10.0,
-                material = ConductorMaterial.Copper,
-                installMode = CableInstallMode.InConduit,
-                lengthMeters = null,
-                phaseMode = PhaseMode.Single,
-                voltageVolts = 220.0,
-            ),
-        )
+        val r = cableSectionTz(10.0, ConductorMaterial.Copper, CableInstallMode.InConduit)
         assertNotNull(r)
         assertEquals(1.5, r!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun tzCableSection16AmpsCopperInConduit() {
+        val r = cableSectionTz(16.0, ConductorMaterial.Copper, CableInstallMode.InConduit)
+        assertNotNull(r)
+        assertEquals(2.5, r!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun tzCableSection25AmpsCopperInConduit() {
+        val r = cableSectionTz(25.0, ConductorMaterial.Copper, CableInstallMode.InConduit)
+        assertNotNull(r)
+        assertEquals(4.0, r!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun tzCableSection32AmpsCopperOpen() {
+        val r = cableSectionTz(32.0, ConductorMaterial.Copper, CableInstallMode.OpenAir)
+        assertNotNull(r)
+        // По допустимому току в воздухе (≈38 А на 4 мм²) достаточно 4 мм²; 6 мм² — запас на объекте.
+        assertEquals(4.0, r!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun cableSectionSameFor220And380WithoutLength() {
+        val base = CableSectionInput(
+            16.0,
+            ConductorMaterial.Copper,
+            CableInstallMode.InConduit,
+            null,
+            PhaseMode.Single,
+            220.0,
+        )
+        val at380 = base.copy(phaseMode = PhaseMode.Three, voltageVolts = 380.0)
+        val r220 = ElectricalCalculators.cableSection(base)
+        val r380 = ElectricalCalculators.cableSection(at380)
+        assertNotNull(r220)
+        assertNotNull(r380)
+        assertEquals(r220!!.recommendedSectionMm2, r380!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun tzCableSection16AmpsAluminumInConduit() {
+        val r = cableSectionTz(16.0, ConductorMaterial.Aluminum, CableInstallMode.InConduit)
+        assertNotNull(r)
+        assertEquals(4.0, r!!.recommendedSectionMm2, 0.0)
+    }
+
+    @Test
+    fun cableSectionIncreasesWithMoreCablesInConduit() {
+        val fewer = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                19.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                null,
+                PhaseMode.Single,
+                220.0,
+                cablesInConduit = CablesInConduit.OneTwo,
+            ),
+        )
+        val more = ElectricalCalculators.cableSection(
+            CableSectionInput(
+                19.0,
+                ConductorMaterial.Copper,
+                CableInstallMode.InConduit,
+                null,
+                PhaseMode.Single,
+                220.0,
+                cablesInConduit = CablesInConduit.ThreeFour,
+            ),
+        )
+        assertNotNull(fewer)
+        assertNotNull(more)
+        assertTrue(more!!.recommendedSectionMm2 > fewer!!.recommendedSectionMm2)
     }
 
     @Test
@@ -60,16 +125,32 @@ class ElectricalCalculatorsTest {
     }
 
     @Test
-    fun ledDcFeederDropTooHighOnThinCable() {
+    fun tzLedDcFeederDropExceedsOnThinCable() {
+        val loadA = 5.0 * 14.4 / 12.0
         val drop = ElectricalCalculators.ledDcFeederDrop(
-            loadAmps = 6.0,
+            loadAmps = loadA,
             supplyVolts = 12.0,
             feeder = LedDcFeederInput(15.0, 1.5, ConductorMaterial.Copper),
         )
         assertNotNull(drop)
-        assertTrue(drop!!.dropVolts > 0.35)
+        assertEquals(2.10, drop!!.dropVolts, 0.05)
+        assertEquals(17.5, drop.dropPercent, 0.5)
         assertTrue(!drop.withinLimit)
-        assertTrue(drop.minSectionMm2!! >= 2.5)
+        assertEquals(10.0, drop.minSectionMm2!!, 0.0)
+    }
+
+    @Test
+    fun tzLedDcFeederDropWithinLimit() {
+        val loadA = 5.0 * 14.4 / 12.0
+        val drop = ElectricalCalculators.ledDcFeederDrop(
+            loadAmps = loadA,
+            supplyVolts = 12.0,
+            feeder = LedDcFeederInput(3.0, 4.0, ConductorMaterial.Copper),
+        )
+        assertNotNull(drop)
+        assertEquals(0.16, drop!!.dropVolts, 0.03)
+        assertEquals(1.3, drop.dropPercent, 0.2)
+        assertTrue(drop.withinLimit)
     }
 
     @Test
@@ -127,4 +208,19 @@ class ElectricalCalculatorsTest {
         assertEquals(300.0, r!!.totalWatts, 0.01)
         assertTrue(abs(r.approxCurrentSinglePhase220 - 300.0 / 220.0) < 0.01)
     }
+
+    private fun cableSectionTz(
+        amps: Double,
+        material: ConductorMaterial,
+        install: CableInstallMode,
+    ) = ElectricalCalculators.cableSection(
+        CableSectionInput(
+            currentAmps = amps,
+            material = material,
+            installMode = install,
+            lengthMeters = null,
+            phaseMode = PhaseMode.Single,
+            voltageVolts = 220.0,
+        ),
+    )
 }
