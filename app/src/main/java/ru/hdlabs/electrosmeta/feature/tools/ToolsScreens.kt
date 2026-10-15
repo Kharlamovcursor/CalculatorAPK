@@ -66,7 +66,7 @@ import ru.hdlabs.electrosmeta.domain.electrical.PhaseMode
 import ru.hdlabs.electrosmeta.domain.electrical.RcdHintInput
 import ru.hdlabs.electrosmeta.domain.electrical.VoltageDropInput
 import ru.hdlabs.electrosmeta.domain.electrical.parseElectricalDouble
-import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
+import ru.hdlabs.electrosmeta.ui.background.AppBackground
 import ru.hdlabs.electrosmeta.ui.components.HdCard
 import ru.hdlabs.electrosmeta.ui.components.HdPrimaryButton
 import ru.hdlabs.electrosmeta.ui.components.HdTextField
@@ -883,7 +883,7 @@ internal fun ToolScreenScaffold(
 ) {
     val motion = LocalHdMotion.current
     Box(Modifier.fillMaxSize()) {
-        SpaceBackground()
+        AppBackground()
         Scaffold(
             containerColor = HdBlack.copy(alpha = motion.scaffoldOverlayAlpha),
             topBar = {

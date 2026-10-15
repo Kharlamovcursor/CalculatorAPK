@@ -19,6 +19,7 @@ class SettingsRepository(private val context: Context) {
         AppSettings(
             animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 115,
             animationEnabled = prefs[Keys.ANIM_ENABLED] ?: true,
+            backgroundTheme = BackgroundTheme.fromStorage(prefs[Keys.BACKGROUND_THEME]),
             powerSaveMode = prefs[Keys.POWER_SAVE] ?: false,
             uiMotionLevel = UiMotionLevel.fromStorage(prefs[Keys.UI_MOTION_LEVEL]),
             companyName = prefs[Keys.COMPANY] ?: "HDLabs",
@@ -44,6 +45,7 @@ class SettingsRepository(private val context: Context) {
             val current = AppSettings(
                 animationSpeedPercent = prefs[Keys.ANIM_SPEED] ?: 115,
                 animationEnabled = prefs[Keys.ANIM_ENABLED] ?: true,
+                backgroundTheme = BackgroundTheme.fromStorage(prefs[Keys.BACKGROUND_THEME]),
                 powerSaveMode = prefs[Keys.POWER_SAVE] ?: false,
                 uiMotionLevel = UiMotionLevel.fromStorage(prefs[Keys.UI_MOTION_LEVEL]),
                 companyName = prefs[Keys.COMPANY] ?: "HDLabs",
@@ -65,6 +67,7 @@ class SettingsRepository(private val context: Context) {
             val updated = transform(current)
             prefs[Keys.ANIM_SPEED] = updated.animationSpeedPercent
             prefs[Keys.ANIM_ENABLED] = updated.animationEnabled
+            prefs[Keys.BACKGROUND_THEME] = updated.backgroundTheme.name
             prefs[Keys.POWER_SAVE] = updated.powerSaveMode
             prefs[Keys.COMPANY] = updated.companyName
             prefs[Keys.PERFORMER] = updated.performerTitle
@@ -97,6 +100,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val ANIM_SPEED = intPreferencesKey("anim_speed")
         val ANIM_ENABLED = booleanPreferencesKey("anim_enabled")
+        val BACKGROUND_THEME = stringPreferencesKey("background_theme")
         val POWER_SAVE = booleanPreferencesKey("power_save")
         val COMPANY = stringPreferencesKey("company")
         val PERFORMER = stringPreferencesKey("performer")

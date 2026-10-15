@@ -8,6 +8,18 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+fun gradleStringLiteral(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        load(file.reader())
+    }
+}
+
+fun localProp(key: String): String = localProperties.getProperty(key)?.trim() ?: ""
+
 android {
     namespace = "ru.hdlabs.electrosmeta"
     compileSdk = 35
@@ -16,13 +28,26 @@ android {
         applicationId = "ru.hdlabs.electrosmeta"
         minSdk = 28
         targetSdk = 35
-        versionCode = 49
-        versionName = "1.2.3"
+        versionCode = 51
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GITHUB_RELEASES_OWNER", "\"Kharlamovcursor\"")
         buildConfigField("String", "GITHUB_RELEASES_REPO", "\"CalculatorAPK\"")
+        // Личный чат без сервера. Позже можно заменить на бота через local.properties.
+        buildConfigField(
+            "String",
+            "TELEGRAM_FEEDBACK_URL",
+            gradleStringLiteral(
+                localProp("telegram.feedback.url").ifBlank { "https://t.me/Yakofffff" },
+            ),
+        )
+        buildConfigField(
+            "String",
+            "TELEGRAM_FEEDBACK_BOT",
+            gradleStringLiteral(localProp("telegram.feedback.bot")),
+        )
     }
 
     signingConfigs {

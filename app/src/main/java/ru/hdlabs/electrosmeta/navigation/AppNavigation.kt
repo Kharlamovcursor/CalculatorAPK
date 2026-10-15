@@ -133,6 +133,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.hdlabs.electrosmeta.BuildConfig
 import ru.hdlabs.electrosmeta.ElectrosmetaApplication
+import ru.hdlabs.electrosmeta.feedback.TelegramFeedback
 import ru.hdlabs.electrosmeta.data.local.EstimateType
 import ru.hdlabs.electrosmeta.data.local.entities.CategoryEntity
 import ru.hdlabs.electrosmeta.data.local.entities.EstimateEntity
@@ -156,7 +157,8 @@ import ru.hdlabs.electrosmeta.update.ApkDownloadHelper
 import ru.hdlabs.electrosmeta.update.ReleaseUpdateConfig
 import ru.hdlabs.electrosmeta.update.UpdateInfo
 import ru.hdlabs.electrosmeta.pdf.PdfStorageHelper
-import ru.hdlabs.electrosmeta.ui.background.SpaceBackground
+import ru.hdlabs.electrosmeta.ui.background.AppBackground
+import ru.hdlabs.electrosmeta.data.settings.BackgroundTheme
 import ru.hdlabs.electrosmeta.data.settings.CategoryHighlightStyle
 import ru.hdlabs.electrosmeta.ui.motion.LocalHdMotion
 import ru.hdlabs.electrosmeta.ui.motion.resolveHdMotion
@@ -296,7 +298,7 @@ private fun HdScaffold(
 ) {
     val motion = LocalHdMotion.current
     Box(Modifier.fillMaxSize()) {
-        SpaceBackground()
+        AppBackground()
         Scaffold(
             containerColor = HdBlack.copy(alpha = motion.scaffoldOverlayAlpha),
             topBar = {
@@ -1584,6 +1586,36 @@ private fun SettingsScreen(nav: NavHostController) {
                 scope.launch { app.container.settingsRepository.update { s -> s.copy(powerSaveMode = it) } }
             })
         }
+        Spacer(Modifier.height(12.dp))
+        Text("Тема фона", color = HdTextPrimary)
+        Text(
+            "Космос и сезоны: листья, снежинки, лепестки, светлячки. Меняется только фон.",
+            color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        BackgroundTheme.selectable.forEach { theme ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .clickable {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(backgroundTheme = theme) }
+                        }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = settings.backgroundTheme == theme,
+                    onCheckedChange = {
+                        scope.launch {
+                            app.container.settingsRepository.update { it.copy(backgroundTheme = theme) }
+                        }
+                    },
+                )
+                Text(theme.label, color = HdTextSecondary)
+            }
+        }
         Spacer(Modifier.height(16.dp))
         HdCard {
             Text("Налог в сметах", color = HdTextPrimary)
@@ -1687,6 +1719,8 @@ private fun SettingsScreen(nav: NavHostController) {
                 }
             }
         }
+        Spacer(Modifier.height(16.dp))
+        TelegramFeedbackSection()
         Spacer(Modifier.height(16.dp))
         UpdateCheckSection()
     }
@@ -1821,6 +1855,39 @@ private fun AboutScreen(nav: NavHostController) {
                 settingsSavePhase = HdSavePhase.Idle
             }
         }
+    }
+}
+
+@Composable
+private fun TelegramFeedbackSection() {
+    val context = LocalContext.current
+    var dialogMessage by remember { mutableStateOf<String?>(null) }
+
+    Text("Обратная связь", color = HdTextPrimary)
+    Text(
+        "Откроется Telegram. Напишите оценку или комментарий — сообщение увидит только разработчик.",
+        color = HdTextSecondary,
+        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+    )
+    HdSecondaryButton("Написать разработчику") {
+        TelegramFeedback.open(context).onFailure {
+            dialogMessage = if (!TelegramFeedback.isConfigured()) {
+                "Telegram не настроен в этой сборке."
+            } else {
+                it.message ?: "Не удалось открыть Telegram. Установите приложение Telegram."
+            }
+        }
+    }
+
+    dialogMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { dialogMessage = null },
+            title = { Text("Обратная связь") },
+            text = { Text(message, color = HdTextSecondary) },
+            confirmButton = {
+                HdPrimaryButton("Понятно") { dialogMessage = null }
+            },
+        )
     }
 }
 

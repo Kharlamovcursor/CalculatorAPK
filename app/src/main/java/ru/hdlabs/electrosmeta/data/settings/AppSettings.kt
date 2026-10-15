@@ -3,6 +3,7 @@ package ru.hdlabs.electrosmeta.data.settings
 data class AppSettings(
     val animationSpeedPercent: Int = 115,
     val animationEnabled: Boolean = true,
+    val backgroundTheme: BackgroundTheme = BackgroundTheme.Space,
     val powerSaveMode: Boolean = false,
     val uiMotionLevel: UiMotionLevel = UiMotionLevel.Expressive,
     val companyName: String = "HDLabs",
