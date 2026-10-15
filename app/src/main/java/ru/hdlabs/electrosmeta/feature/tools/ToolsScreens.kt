@@ -11,11 +11,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -81,8 +79,8 @@ import ru.hdlabs.electrosmeta.ui.theme.HdTextPrimary
 import ru.hdlabs.electrosmeta.ui.theme.HdTextSecondary
 
 const val ToolsCalculatorsDisclaimer =
-    "Расчёт ориентировочный (предварительный подбор). Упрощённые модели могут не совпадать с ПУЭ и СП. " +
-        "Ответственность за безопасность установки несёт исполнитель и проектировщик."
+    "Расчёт ориентировочный. Упрощённые модели могут не совпадать с ПУЭ и СП. " +
+        "Ответственность за безопасность несёт исполнитель и проектировщик."
 
 object ToolRoutes {
     const val CABLE = "tool/cable"
@@ -180,6 +178,7 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val i = parseElectricalDouble(current)
@@ -297,11 +296,14 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -318,6 +320,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val l = parseElectricalDouble(length)
@@ -451,11 +454,14 @@ fun LedStripToolScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -474,6 +480,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val p = parseElectricalDouble(power)
@@ -525,11 +532,14 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -547,6 +557,7 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
         LaunchedEffect(phase) {
             if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
             if (phase == PhaseMode.Single && lineVoltage == 380) lineVoltage = 220
@@ -630,11 +641,14 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         HdTwoChoice("1 фаза", "3 фазы", phase == PhaseMode.Single) {
             phase = if (it) PhaseMode.Single else PhaseMode.Three
         }
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -647,6 +661,7 @@ fun LightingToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val a = parseElectricalDouble(area)
@@ -689,11 +704,14 @@ fun LightingToolScreen(onBack: () -> Unit) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -707,6 +725,7 @@ fun RcdToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val b = parseElectricalDouble(breaker)?.toInt()
@@ -755,11 +774,14 @@ fun RcdToolScreen(onBack: () -> Unit) {
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 10.dp),
         )
-        ToolCalcButton("Подсказка") {
+        ToolCalcButton(
+            "Подсказка",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -774,6 +796,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
         var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
+        var scrollToResultNonce by remember { mutableIntStateOf(0) }
 
         fun performCalc() {
             val segs = lengths.lines()
@@ -846,11 +869,14 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
         HdTextField(runs, { runs = it }, "Сколько таких одинаковых трасс")
         HdTextField(reserve, { reserve = it }, "Запас, % (пусто = 0)")
         HdTextField(roll, { roll = it }, "Длина бухты, м (необяз.)")
-        ToolCalcButton("Рассчитать") {
+        ToolCalcButton(
+            "Рассчитать",
+            onRequestScrollToResult = { scrollToResultNonce++ },
+        ) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes, report)
+        ToolResultBlock(resultText, notes, report, scrollToResultNonce)
     }
 }
 
@@ -878,28 +904,18 @@ internal fun ToolScreenScaffold(
                 )
             },
         ) { padding ->
-            BoxWithConstraints(
+            val scroll = rememberScrollState()
+            Column(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .imePadding(),
+                    .imePadding()
+                    .verticalScroll(scroll)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                val scroll = rememberScrollState()
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = maxHeight)
-                        .verticalScroll(scroll)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Column(Modifier.fillMaxWidth()) {
-                        content()
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Text(ToolsCalculatorsDisclaimer, color = HdTextSecondary)
-                }
+                content()
+                Spacer(Modifier.height(20.dp))
+                Text(ToolsCalculatorsDisclaimer, color = HdTextSecondary)
             }
         }
     }
@@ -915,21 +931,31 @@ private fun ToolAutoRecalcEffect(enabled: Boolean, inputKey: Any?, onRecalc: () 
 
 /** Скрывает клавиатуру перед расчётом, чтобы был виден блок «Результат». */
 @Composable
-private fun ToolCalcButton(text: String, onClick: () -> Unit) {
+private fun ToolCalcButton(
+    text: String,
+    onRequestScrollToResult: () -> Unit = {},
+    onClick: () -> Unit,
+) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     HdPrimaryButton(text) {
         focusManager.clearFocus()
         keyboard?.hide()
+        onRequestScrollToResult()
         onClick()
     }
 }
 
 @Composable
-private fun ToolResultBlock(result: String?, notes: List<String>, report: ToolCalcReport? = null) {
+private fun ToolResultBlock(
+    result: String?,
+    notes: List<String>,
+    report: ToolCalcReport? = null,
+    scrollToResultNonce: Int = 0,
+) {
     val bringIntoView = remember { BringIntoViewRequester() }
-    LaunchedEffect(result, notes, report) {
-        if (result != null || notes.isNotEmpty() || report != null) {
+    LaunchedEffect(scrollToResultNonce) {
+        if (scrollToResultNonce > 0 && (result != null || notes.isNotEmpty())) {
             delay(120)
             bringIntoView.bringIntoView()
         }

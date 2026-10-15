@@ -117,6 +117,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlin.OptIn
@@ -276,6 +277,19 @@ fun AppNavHost() {
                 EstimateScreen(nav, id)
             }
         }
+        val backStackEntry by nav.currentBackStackEntryAsState()
+        val isOnHome = backStackEntry?.destination?.route == Routes.HOME
+        val homeTabHandle = remember(nav) {
+            nav.getBackStackEntry(Routes.HOME).savedStateHandle
+        }
+        val homeTabKey by homeTabHandle
+            .getStateFlow(ToolRoutes.HOME_TAB_KEY, HomeTab.Estimate.name)
+            .collectAsStateWithLifecycle()
+        BackHandler(
+            enabled = isOnHome && homeTabKey == ToolRoutes.HOME_TAB_TOOLS,
+        ) {
+            homeTabHandle[ToolRoutes.HOME_TAB_KEY] = HomeTab.Estimate.name
+        }
     }
 }
 
@@ -329,25 +343,18 @@ private fun HomeScreen(nav: NavHostController) {
     val motion = LocalHdMotion.current
     val homeEntry = remember(nav) { nav.getBackStackEntry(Routes.HOME) }
     val homeTabHandle = homeEntry.savedStateHandle
-    var tab by remember {
-        mutableStateOf(
-            if (homeTabHandle.get<String>(ToolRoutes.HOME_TAB_KEY) == ToolRoutes.HOME_TAB_TOOLS) {
-                HomeTab.Tools
-            } else {
-                HomeTab.Estimate
-            },
-        )
+    val homeTabKey by homeTabHandle
+        .getStateFlow(ToolRoutes.HOME_TAB_KEY, HomeTab.Estimate.name)
+        .collectAsStateWithLifecycle()
+    val tab = when (homeTabKey) {
+        ToolRoutes.HOME_TAB_TOOLS -> HomeTab.Tools
+        else -> HomeTab.Estimate
     }
-    LaunchedEffect(nav.currentBackStackEntry) {
-        if (nav.currentDestination?.route == Routes.HOME) {
-            when (homeTabHandle.get<String>(ToolRoutes.HOME_TAB_KEY)) {
-                ToolRoutes.HOME_TAB_TOOLS -> tab = HomeTab.Tools
-                HomeTab.Estimate.name -> tab = HomeTab.Estimate
-            }
+    fun selectHomeTab(next: HomeTab) {
+        homeTabHandle[ToolRoutes.HOME_TAB_KEY] = when (next) {
+            HomeTab.Tools -> ToolRoutes.HOME_TAB_TOOLS
+            HomeTab.Estimate -> HomeTab.Estimate.name
         }
-    }
-    LaunchedEffect(tab) {
-        homeTabHandle[ToolRoutes.HOME_TAB_KEY] = tab.name
     }
     val homeScroll = rememberScrollState()
     HdScaffold(title = "", scroll = false, showTopBar = false) {
@@ -377,7 +384,7 @@ private fun HomeScreen(nav: NavHostController) {
                                 .padding(bottom = 10.dp),
                             contentScale = ContentScale.Fit,
                         )
-                        HomeTabSwitcher(tab) { tab = it }
+                        HomeTabSwitcher(tab, onSelect = ::selectHomeTab)
                         Spacer(Modifier.height(14.dp))
                         AnimatedContent(
                             targetState = tab,
