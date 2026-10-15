@@ -126,13 +126,7 @@ fun ToolsHubContent(
         Text(
             ToolsCalculatorsDisclaimer,
             color = HdTextSecondary,
-            modifier = Modifier.padding(bottom = 8.dp),
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            ToolsResidentialHint,
-            color = HdTextSecondary,
-            modifier = Modifier.padding(bottom = 12.dp),
+            modifier = Modifier.padding(bottom = 16.dp),
             textAlign = TextAlign.Center,
         )
         toolCards.forEach { card ->

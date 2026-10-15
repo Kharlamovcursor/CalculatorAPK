@@ -16,8 +16,8 @@ android {
         applicationId = "ru.hdlabs.electrosmeta"
         minSdk = 28
         targetSdk = 35
-        versionCode = 48
-        versionName = "1.2.2"
+        versionCode = 49
+        versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

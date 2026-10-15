@@ -4,7 +4,9 @@ package ru.hdlabs.electrosmeta.navigation
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -93,7 +95,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -111,13 +116,13 @@ import androidx.compose.ui.unit.dp
 import ru.hdlabs.electrosmeta.ui.theme.HdBlue
 import ru.hdlabs.electrosmeta.ui.theme.HdOrange
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlin.OptIn
@@ -277,19 +282,6 @@ fun AppNavHost() {
                 EstimateScreen(nav, id)
             }
         }
-        val backStackEntry by nav.currentBackStackEntryAsState()
-        val isOnHome = backStackEntry?.destination?.route == Routes.HOME
-        val homeTabHandle = remember(nav) {
-            nav.getBackStackEntry(Routes.HOME).savedStateHandle
-        }
-        val homeTabKey by homeTabHandle
-            .getStateFlow(ToolRoutes.HOME_TAB_KEY, HomeTab.Estimate.name)
-            .collectAsStateWithLifecycle()
-        BackHandler(
-            enabled = isOnHome && homeTabKey == ToolRoutes.HOME_TAB_TOOLS,
-        ) {
-            homeTabHandle[ToolRoutes.HOME_TAB_KEY] = HomeTab.Estimate.name
-        }
     }
 }
 
@@ -338,6 +330,33 @@ private fun HdScaffold(
 
 private enum class HomeTab { Estimate, Tools }
 
+/** Перехват «назад» на вкладке «Расчёты» до завершения Activity (NavHost на корне не pop). */
+@Composable
+private fun HomeToolsTabBackHandler(
+    active: Boolean,
+    onSwitchToEstimate: () -> Unit,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val dispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
+    val onBack = rememberUpdatedState(onSwitchToEstimate)
+    val callback = remember {
+        object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                onBack.value()
+            }
+        }
+    }
+    SideEffect {
+        callback.isEnabled = active
+    }
+    DisposableEffect(lifecycleOwner, dispatcher) {
+        dispatcher.addCallback(lifecycleOwner, callback)
+        onDispose {
+            callback.remove()
+        }
+    }
+}
+
 @Composable
 private fun HomeScreen(nav: NavHostController) {
     val motion = LocalHdMotion.current
@@ -356,6 +375,10 @@ private fun HomeScreen(nav: NavHostController) {
             HomeTab.Estimate -> HomeTab.Estimate.name
         }
     }
+    HomeToolsTabBackHandler(
+        active = tab == HomeTab.Tools,
+        onSwitchToEstimate = { selectHomeTab(HomeTab.Estimate) },
+    )
     val homeScroll = rememberScrollState()
     HdScaffold(title = "", scroll = false, showTopBar = false) {
         Column(Modifier.fillMaxSize()) {
