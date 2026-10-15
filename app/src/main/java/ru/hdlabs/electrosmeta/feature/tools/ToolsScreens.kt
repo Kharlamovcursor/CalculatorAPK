@@ -5,6 +5,7 @@ package ru.hdlabs.electrosmeta.feature.tools
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -127,6 +128,12 @@ fun ToolsHubContent(
         Text(
             ToolsCalculatorsDisclaimer,
             color = HdTextSecondary,
+            modifier = Modifier.padding(bottom = 8.dp),
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            ToolsResidentialHint,
+            color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 12.dp),
             textAlign = TextAlign.Center,
         )
@@ -207,7 +214,7 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
                         inputs = listOf(
                             "I = $i А",
                             "L = ${len ?: "—"} м",
-                            "U = $lineVoltage В, ${if (phase == PhaseMode.Single) "1 фаза" else "3 фазы"}",
+                            "U = ${formatCalcVoltageLabel(lineVoltage)}, ${if (phase == PhaseMode.Single) "1 фаза" else "3 фазы"}",
                             "Линия: ${if (lineKind == ElectricalLineKind.Power) "силовая" else "освещение"} (ΔU ≤ $maxDu%)",
                         ),
                         methodLines = listOf(
@@ -222,9 +229,12 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
                                 add(ToolCalcCheck("ΔU ≤ $maxDu%", "${"%.2f".format(it)}%", it <= maxDu))
                             }
                         },
-                        warnings = listOf("Не заменяет проект и расчёт КЗ."),
-                        normativeNotes = listOf("ПУЭ гл. 1.3 — упрощённые таблицы, требует проверки инженером."),
-                        recommendations = listOf(r.recommendation),
+                        warnings = toolStandardWarnings(),
+                        normativeNotes = toolStandardNormativeNotes(),
+                        recommendations = listOf(
+                            r.recommendation,
+                            "При проверке только ΔU откройте калькулятор «Падение напряжения».",
+                        ),
                     )
                 }
             }
@@ -235,10 +245,32 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
         }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(
+            listOf("Розетки 16 А", "Освещение 10 А", "Плита 32 А"),
+        ) { label ->
+            when (label) {
+                "Розетки 16 А" -> {
+                    current = "16"
+                    lineKind = ElectricalLineKind.Power
+                }
+                "Освещение 10 А" -> {
+                    current = "10"
+                    lineKind = ElectricalLineKind.Lighting
+                }
+                "Плита 32 А" -> {
+                    current = "32"
+                    lineKind = ElectricalLineKind.Power
+                    phase = PhaseMode.Three
+                    lineVoltage = 380
+                }
+            }
+            liveRecalc = true
+            performCalc()
+        }
         HdTextField(current, { current = it }, "Ток нагрузки, А (фазный / линейный)")
         HdTextField(length, { length = it }, "Длина линии, м (необяз., в одну сторону)")
         Text(
-            "Без длины считаем только по допустимому току — 220 и 380 В при одном и том же токе дадут то же сечение.",
+            "Без длины — только по току. Номинал 230/400 В на сечение по нагреву не влияет; для ΔU укажите длину.",
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -269,8 +301,7 @@ fun CableSectionToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
-        report?.let { ToolCalcReportBlock(it) }
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -285,6 +316,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
         var feederMaterial by remember { mutableStateOf(ConductorMaterial.Copper) }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
 
         fun performCalc() {
@@ -303,6 +335,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
             } else null
             if (r == null) {
                 resultText = null
+                report = null
                 notes = listOf("Проверьте введённые значения.")
             } else {
                 resultText = buildString {
@@ -343,6 +376,25 @@ fun LedStripToolScreen(onBack: () -> Unit) {
                         add("При большом падении лента тускнеет на конце; для низкого напряжения часто целятся в ≤3% ΔU.")
                     }
                 }
+                report = baseToolReport(
+                    headline = resultText!!,
+                    inputs = listOf(
+                        "L = $l м, $wpm Вт/м",
+                        if (r.isMainsAc) "Питание: сеть ${supplyVolts} В" else "БП: ${supplyVolts} В",
+                    ),
+                    methodLines = if (r.isMainsAc) {
+                        listOf("Сетевая лента: без DC-формулы ΔU.")
+                    } else {
+                        listOf("P = L·Pуд; I = P/U; БП с запасом; DC: ΔU = 2·I·L·ρ/S, лимит 3%.")
+                    },
+                    substitutionLines = r.dcFeeder?.let { fd ->
+                        listOf("ΔU DC ≈ ${"%.1f".format(fd.dropPercent)}%")
+                    } ?: emptyList(),
+                    checks = r.dcFeeder?.let { fd ->
+                        listOf(ToolCalcCheck("ΔU DC ≤ ${fd.maxDropPercent.toInt()}%", "${"%.1f".format(fd.dropPercent)}%", fd.withinLimit))
+                    } ?: emptyList(),
+                    recommendations = listOf(r.recommendation),
+                )
             }
         }
 
@@ -351,6 +403,27 @@ fun LedStripToolScreen(onBack: () -> Unit) {
         }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(listOf("5 м × 14,4", "3 м × 9,6", "220 В сеть")) { label ->
+            when (label) {
+                "5 м × 14,4" -> {
+                    length = "5"
+                    wpm = "14.4"
+                    supplyVolts = 12
+                }
+                "3 м × 9,6" -> {
+                    length = "3"
+                    wpm = "9.6"
+                    supplyVolts = 12
+                }
+                "220 В сеть" -> {
+                    length = "5"
+                    wpm = "14.4"
+                    supplyVolts = 220
+                }
+            }
+            liveRecalc = true
+            performCalc()
+        }
         HdTextField(length, { length = it }, "Длина ленты, м")
         HdTextField(wpm, { wpm = it }, "Мощность, Вт/м")
         HdLedVoltagePicker(supplyVolts, onSelect = { supplyVolts = it })
@@ -382,7 +455,7 @@ fun LedStripToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -399,6 +472,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
 
         fun performCalc() {
@@ -411,6 +485,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
             } else null
             if (r == null) {
                 resultText = null
+                report = null
                 notes = listOf("Укажите мощность.")
             } else {
                 resultText = buildString {
@@ -418,6 +493,18 @@ fun BreakerToolScreen(onBack: () -> Unit) {
                     append("С запасом 1,25: ${"%.1f".format(r.designAmps)} А → автомат ${r.recommendedBreakerAmps} А.")
                 }
                 notes = listOf(r.recommendation) + r.notes
+                report = baseToolReport(
+                    headline = resultText!!,
+                    inputs = listOf(
+                        "P = $p кВт, cos φ = $c",
+                        formatCalcVoltageLabel(lineVoltage) + ", " + if (phase == PhaseMode.Single) "1 фаза" else "3 фазы",
+                    ),
+                    methodLines = listOf("I = P/(U·cos φ) или P/(√3·U·cos φ); автомат ≥ 1,25·I."),
+                    substitutionLines = listOf(
+                        "I ≈ ${"%.2f".format(r.loadAmps)} А → ${r.recommendedBreakerAmps} А",
+                    ),
+                    recommendations = listOf(r.recommendation, "Дальше: «Сечение кабеля» с этим током и длиной линии."),
+                )
             }
         }
 
@@ -426,6 +513,11 @@ fun BreakerToolScreen(onBack: () -> Unit) {
         }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(listOf("1,5 кВт", "3 кВт", "5 кВт", "7 кВт")) { label ->
+            power = label.replace(" кВт", "").replace(',', '.')
+            liveRecalc = true
+            performCalc()
+        }
         HdTextField(power, { power = it }, "Мощность, кВт")
         HdAcVoltagePicker(lineVoltage, onSelect = { lineVoltage = it })
         HdTextField(cos, { cos = it }, "cos φ")
@@ -437,7 +529,7 @@ fun BreakerToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -453,6 +545,7 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         var lineKind by remember { mutableStateOf(ElectricalLineKind.Power) }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
         LaunchedEffect(phase) {
             if (phase == PhaseMode.Three && lineVoltage == 220) lineVoltage = 380
@@ -478,11 +571,27 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
             } else null
             if (r == null) {
                 resultText = null
+                report = null
                 notes = listOf("Заполните ток, длину и сечение.")
             } else {
                 val ok = if (r.withinLimit) "в норме (≤${r.maxDropPercent.toInt()}%)" else "выше ${r.maxDropPercent.toInt()}%"
                 resultText = "ΔU ≈ ${"%.2f".format(r.dropVolts)} В (${"%.1f".format(r.dropPercent)}%), $ok"
                 notes = listOf(r.recommendation)
+                val formula = if (phase == PhaseMode.Single) "ΔU = 2·L·I·ρ/S" else "ΔU = √3·L·I·ρ/S"
+                report = baseToolReport(
+                    headline = resultText!!,
+                    inputs = listOf(
+                        "I = $i А, L = $l м, S = $s мм²",
+                        formatCalcVoltageLabel(lineVoltage),
+                        if (lineKind == ElectricalLineKind.Power) "Силовая (≤${r.maxDropPercent.toInt()}%)" else "Освещение (≤${r.maxDropPercent.toInt()}%)",
+                    ),
+                    methodLines = listOf("$formula, cos φ = 1."),
+                    substitutionLines = listOf("ΔU = ${"%.2f".format(r.dropVolts)} В (${"%.1f".format(r.dropPercent)}%)"),
+                    checks = listOf(
+                        ToolCalcCheck("ΔU ≤ ${r.maxDropPercent.toInt()}%", "${"%.1f".format(r.dropPercent)}%", r.withinLimit),
+                    ),
+                    recommendations = listOf(r.recommendation),
+                )
             }
         }
 
@@ -491,6 +600,20 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
         }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(listOf("16 А розетки", "10 А свет")) { label ->
+            when (label) {
+                "16 А розетки" -> {
+                    current = "16"
+                    lineKind = ElectricalLineKind.Power
+                }
+                "10 А свет" -> {
+                    current = "10"
+                    lineKind = ElectricalLineKind.Lighting
+                }
+            }
+            liveRecalc = true
+            performCalc()
+        }
         HdTextField(current, { current = it }, "Ток, А")
         HdTextField(length, { length = it }, "Длина, м")
         HdTextField(section, { section = it }, "Сечение, мм²")
@@ -511,7 +634,7 @@ fun VoltageDropToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -522,26 +645,47 @@ fun LightingToolScreen(onBack: () -> Unit) {
         var wsq by remember { mutableStateOf("15") }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
 
         fun performCalc() {
             val a = parseElectricalDouble(area)
             val w = parseElectricalDouble(wsq)
             val r = if (a != null && w != null) ElectricalCalculators.lightingPower(LightingPowerInput(a, w)) else null
-            resultText = r?.let {
-                "Суммарная мощность ≈ ${"%.0f".format(it.totalWatts)} Вт.\n" +
-                    "Ток одной фазы 220 В ≈ ${"%.1f".format(it.approxCurrentSinglePhase220)} А."
+            if (r == null) {
+                resultText = null
+                report = null
+                notes = emptyList()
+            } else {
+                resultText = "Суммарная мощность ≈ ${"%.0f".format(r.totalWatts)} Вт.\n" +
+                    "Ток одной фазы 230 В ≈ ${"%.1f".format(r.approxCurrentSinglePhase220)} А."
+                notes = listOf(r.recommendation)
+                report = baseToolReport(
+                    headline = resultText!!,
+                    inputs = listOf("S = $a м², $w Вт/м²"),
+                    methodLines = listOf("P = S·Вт/м²; ориентир тока на 220 В — не расчёт люкс/СП."),
+                    substitutionLines = listOf("P ≈ ${"%.0f".format(r.totalWatts)} Вт"),
+                    recommendations = listOf(r.recommendation),
+                )
             }
-            notes = r?.let { listOf(it.recommendation) } ?: emptyList()
         }
 
         val inputKey = remember(area, wsq) { listOf(area, wsq) }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(listOf("Комната 12", "Кухня 15", "Ванная 15")) { label ->
+            wsq = when (label) {
+                "Комната 12" -> "12"
+                "Кухня 15" -> "15"
+                else -> "15"
+            }
+            liveRecalc = true
+            performCalc()
+        }
         HdTextField(area, { area = it }, "Площадь, м²")
         HdTextField(wsq, { wsq = it }, "Удельная мощность, Вт/м²")
         Text(
-            "Ориентир: жилые комнаты ~10–15, кухня ~15–20, ванная ~15 Вт/м² (LED).",
+            "Ориентир по Вт/м² (LED), не норма освещённости по СП.",
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 8.dp),
         )
@@ -549,7 +693,7 @@ fun LightingToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -561,12 +705,14 @@ fun RcdToolScreen(onBack: () -> Unit) {
         var higherShockRisk by remember { mutableStateOf(false) }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
 
         fun performCalc() {
             val b = parseElectricalDouble(breaker)?.toInt()
             if (b == null || b <= 0) {
                 resultText = null
+                report = null
                 notes = listOf("Укажите номинал автомата.")
             } else {
                 val r = ElectricalCalculators.rcdHint(
@@ -578,6 +724,15 @@ fun RcdToolScreen(onBack: () -> Unit) {
                 )
                 resultText = "УЗО: ${r.rcdRatedAmps} А, чувствительность ${r.leakageMa} мА."
                 notes = listOf(r.recommendation) + r.notes
+                report = baseToolReport(
+                    headline = resultText!!,
+                    inputs = listOf(
+                        "Автомат линии: $b А",
+                        if (electronicsLoad) "Нагрузка с электроникой" else "Классическая нагрузка",
+                    ),
+                    methodLines = listOf("Справочный подбор; не заменяет проект и схему УЗО/дифавтомата."),
+                    recommendations = listOf(r.recommendation),
+                )
             }
         }
 
@@ -596,7 +751,7 @@ fun RcdToolScreen(onBack: () -> Unit) {
             higherShockRisk = !it
         }
         Text(
-            "Для квартир и новой проводки предпочтительны УЗО типа A (чувствительны к пульсирующему постоянному току). Тип AC — в основном для старых линий без электроники; для дома с LED, зарядками и БП часто недостаточен.",
+            "Тип A — для линий с LED, БП и зарядками; 10 мА — только как подсказка для зон повышенного риска.",
             color = HdTextSecondary,
             modifier = Modifier.padding(bottom = 10.dp),
         )
@@ -604,7 +759,7 @@ fun RcdToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -617,6 +772,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
         var roll by remember { mutableStateOf("") }
         var resultText by remember { mutableStateOf<String?>(null) }
         var notes by remember { mutableStateOf<List<String>>(emptyList()) }
+        var report by remember { mutableStateOf<ToolCalcReport?>(null) }
         var liveRecalc by remember { mutableStateOf(false) }
 
         fun performCalc() {
@@ -640,11 +796,43 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
                 rCount <= 0 -> listOf("Укажите число одинаковых трасс (целое больше 0).")
                 else -> emptyList()
             }
+            report = r?.let {
+                baseToolReport(
+                    headline = resultText ?: "",
+                    inputs = listOf(
+                        "Участки: ${segs.joinToString(", ")} м",
+                        "Трасс: $rCount, запас $res%",
+                    ),
+                    methodLines = listOf(
+                        "L = Σучастков × Nтрасс × (1+З%); заказ = округление вверх до 1 м; бухты не прибавляются к метражу.",
+                    ),
+                    substitutionLines = listOf(
+                        "Точно ${"%.1f".format(it.exactMetersWithReserve)} м → заказ ${it.orderMeters} м",
+                    ),
+                    recommendations = listOf(it.recommendation),
+                )
+            }
         }
 
         val inputKey = remember(lengths, runs, reserve, roll) { listOf(lengths, runs, reserve, roll) }
         ToolAutoRecalcEffect(liveRecalc, inputKey) { performCalc() }
 
+        ToolTaskPresets(listOf("12 м × 3 +10%", "Одна 25 м")) { label ->
+            when (label) {
+                "12 м × 3 +10%" -> {
+                    lengths = "12"
+                    runs = "3"
+                    reserve = "10"
+                }
+                "Одна 25 м" -> {
+                    lengths = "25"
+                    runs = "1"
+                    reserve = "10"
+                }
+            }
+            liveRecalc = true
+            performCalc()
+        }
         Text(
             "Строки суммируются в одну трассу. Три линии по 12 м → одна строка «12» и «3 трассы», не три строки 12+12+12.",
             color = HdTextSecondary,
@@ -662,7 +850,7 @@ fun CableOrderToolScreen(onBack: () -> Unit) {
             liveRecalc = true
             performCalc()
         }
-        ToolResultBlock(resultText, notes)
+        ToolResultBlock(resultText, notes, report)
     }
 }
 
@@ -738,10 +926,10 @@ private fun ToolCalcButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToolResultBlock(result: String?, notes: List<String>) {
+private fun ToolResultBlock(result: String?, notes: List<String>, report: ToolCalcReport? = null) {
     val bringIntoView = remember { BringIntoViewRequester() }
-    LaunchedEffect(result, notes) {
-        if (result != null || notes.isNotEmpty()) {
+    LaunchedEffect(result, notes, report) {
+        if (result != null || notes.isNotEmpty() || report != null) {
             delay(120)
             bringIntoView.bringIntoView()
         }
@@ -763,16 +951,55 @@ private fun ToolResultBlock(result: String?, notes: List<String>) {
             }
         }
     }
+    if (report != null) {
+        ToolCalcReportBlock(report)
+    }
+}
+
+@Composable
+private fun ToolTaskPresets(labels: List<String>, onPick: (String) -> Unit) {
+    HdChoiceLabel("Быстрый выбор")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        labels.forEach { label ->
+            ToolPresetChip(label) { onPick(label) }
+        }
+    }
+}
+
+@Composable
+private fun ToolPresetChip(label: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = HdPanel),
+        border = BorderStroke(1.dp, HdBlue.copy(alpha = 0.45f)),
+    ) {
+        Text(
+            label,
+            color = HdTextPrimary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
 }
 
 @Composable
 private fun HdAcVoltagePicker(selected: Int, onSelect: (Int) -> Unit) {
     HdChoiceLabel("Напряжение, В")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        HdChipToggle("220", selected == 220, Modifier.weight(1f)) { onSelect(220) }
-        HdChipToggle("380", selected == 380, Modifier.weight(1f)) { onSelect(380) }
+        HdChipToggle("230 (~220)", selected == 220, Modifier.weight(1f)) { onSelect(220) }
+        HdChipToggle("400 (~380)", selected == 380, Modifier.weight(1f)) { onSelect(380) }
     }
-    Spacer(Modifier.height(8.dp))
+    Text(
+        "В формулах — выбранное значение; номинал бытовой сети в РФ: 230/400 В.",
+        color = HdTextSecondary,
+        modifier = Modifier.padding(bottom = 8.dp),
+    )
 }
 
 @Composable
@@ -789,9 +1016,21 @@ private fun HdLedVoltagePicker(selected: Int, onSelect: (Int) -> Unit) {
 
 @Composable
 private fun ToolCalcReportBlock(report: ToolCalcReport) {
+    var expanded by remember { mutableStateOf(false) }
     Spacer(Modifier.height(12.dp))
-    HdCard {
-        Text("Подробный расчёт", color = HdOrange)
+    HdCard(Modifier.clickable { expanded = !expanded }) {
+        Text(
+            if (expanded) "Подробный расчёт ▲" else "Подробный расчёт ▼",
+            color = HdOrange,
+        )
+        if (!expanded) {
+            Text(
+                "Нажмите, чтобы открыть формулы и проверки.",
+                color = HdTextSecondary,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            return@HdCard
+        }
         if (report.inputs.isNotEmpty()) {
             Text("Исходные данные", color = HdTextSecondary, modifier = Modifier.padding(top = 8.dp))
             report.inputs.forEach { Text("• $it", color = HdTextPrimary, modifier = Modifier.padding(top = 4.dp)) }
@@ -817,6 +1056,9 @@ private fun ToolCalcReportBlock(report: ToolCalcReport) {
         }
         report.warnings.forEach { Text("⚠ $it", color = HdOrange, modifier = Modifier.padding(top = 6.dp)) }
         report.normativeNotes.forEach { Text("Норматив: $it", color = HdTextSecondary, modifier = Modifier.padding(top = 4.dp)) }
+        report.recommendations.forEach { rec ->
+            Text(rec, color = HdOrange, modifier = Modifier.padding(top = 6.dp))
+        }
     }
 }
 
